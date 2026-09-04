@@ -83,8 +83,9 @@ object Cli:
     * `merge`, T19 `--serve`). `run`'s `commands` parameter defaults to this map; tests override
     * individual entries (e.g. to simulate an unexpected exception for the exit-2 path) without
     * touching `Cli`. T09 replaced the `Init`/`Config` entries with their real handlers; T10
-    * replaced `Status`/`Log`/`Commit` and gave `Diff` its scan-precedence seam ([[CommandsDiff]] —
-    * rendering is still stubbed until T11).
+    * replaced `Status`/`Log`/`Commit` and gave `Diff` its scan-precedence seam ([[CommandsDiff]]);
+    * T11 completed `Diff`'s rendering and its `<old> <new> [--repo <repository>]` forms (remote
+    * `--repo` resolution stays [[SnapError.NotImplemented]] until T20/T21).
     */
   val defaultCommands: Map[Command, CommandHandler] =
     Command.values.iterator

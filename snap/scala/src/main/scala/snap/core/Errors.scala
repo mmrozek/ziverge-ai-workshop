@@ -357,6 +357,21 @@ enum SnapError:
     */
   case InvalidCommitMessage
 
+  // --- T11 additions: `diff` command (SPEC §7.6; R31, R79, R86–R87) ---
+
+  /** A `diff <old> <new>` operand that fails [[Version.parse]] (R31). Rendered by echoing the raw
+    * operand text rather than the specific [[VersionError]]/id/revision reason — mirroring D9's
+    * `invalid port: <arg>` — because tests 19/25 pin only the class (`invalid version`
+    * substring/prefix), never a particular reason (T11 Notes / decisions).
+    */
+  case InvalidVersionArgument(raw: String)
+
+  /** `diff`'s own arity/option grammar violation — the distinct usage channel DESIGN §8 carves out
+    * (tests 14/24 pin the `usage: snap diff` prefix/substring, never the generic
+    * [[InvalidCommand]]).
+    */
+  case DiffUsage
+
   /** One-line diagnostic detail, without the `snap: ` prefix — the CLI layer (T08) prepends the
     * prefix when printing (spec §10 `snap: <detail>`).
     */
@@ -426,6 +441,9 @@ enum SnapError:
     case CannotReadWorkTree(detail)     => Messages.cannotReadWorkTree(detail)
     case WorkingTreeClean               => Messages.workingTreeClean
     case InvalidCommitMessage           => Messages.invalidCommitMessage
+    // --- T11 additions ---
+    case InvalidVersionArgument(raw) => Messages.invalidVersionArgument(raw)
+    case DiffUsage                   => Messages.diffUsage
 
 /** Message catalog (DESIGN D5): every diagnostic string of the implementation lives here,
   * test-pinned ones verbatim. No other module builds diagnostic text. Where a provided test anchors
@@ -705,3 +723,17 @@ object Messages:
 
   /** Pinned verbatim (test 25, R85/D16) — one wording for every commit-message input violation. */
   val invalidCommitMessage: String = "invalid commit message"
+
+  // --- T11 additions: `diff` command (SPEC §7.6) ---
+
+  /** Pinned substring `invalid version` (tests 19/25) — echoes the raw offending operand rather
+    * than a specific reason, mirroring D9's `invalid port: <arg>` (T11 Notes / decisions). `raw` is
+    * an untrusted CLI argv operand read before [[Version.parse]] succeeds — sanitized (PR1/CR3)
+    * since it may legally contain control characters.
+    */
+  def invalidVersionArgument(raw: String): String = s"invalid version: ${sanitizeControlChars(raw)}"
+
+  /** `diff`'s distinct usage channel (DESIGN §8; tests 14/24 pin the `usage: snap diff` prefix).
+    * The exact wording mirrors SPEC §7.6's fenced grammar block.
+    */
+  val diffUsage: String = "usage: snap diff <old> <new> [--repo <repository>]"
