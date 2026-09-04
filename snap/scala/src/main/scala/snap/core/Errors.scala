@@ -327,6 +327,35 @@ enum SnapError:
     * typed error rather than a defensive throw (D4; untested wording).
     */
   case OtBaseMismatch
+  // --- T10 additions: working-tree scan + status/commit (SPEC §2, §7.3/§7.5, §10; R16–R21,
+  // R26–R27, R83, R85, R104) ---
+
+  /** A symlink, FIFO, or other non-regular entry anywhere in the working-tree walk (R21, R104; test
+    * 08 pins `unsupported working tree entry: <path>` exactly, path relative with `/` separators).
+    * Carried as raw text — an unsupported entry's name need not be a valid tracked path.
+    */
+  case UnsupportedWorkTreeEntry(path: String)
+
+  /** A regular working-tree file whose root-relative path fails [[SnapPath.parse]] — e.g. a
+    * backslash or ASCII control character in a file name (R23 applied to the scan; untested
+    * wording). Carried as raw text for the same reason as [[UnsupportedWorkTreeEntry]].
+    */
+  case InvalidWorkTreePath(path: String)
+
+  /** Filesystem failure while listing or reading the working tree (untested wording). */
+  case CannotReadWorkTree(detail: String)
+
+  /** `snap commit` on a clean working tree — exact path/byte equality with the current tree, no
+    * unsupported entries (R26, R85; test 04 pins `working tree is clean` verbatim).
+    */
+  case WorkingTreeClean
+
+  /** A `snap commit` message that is empty, violates R48's character rules, or exceeds D16's 4096
+    * UTF-8 bytes (R85; test 25 pins `invalid commit message` verbatim for the empty case — one
+    * wording for the whole commit-input rule class, unlike the repository-validation
+    * `PatchMessage*` cases above).
+    */
+  case InvalidCommitMessage
 
   /** One-line diagnostic detail, without the `snap: ` prefix — the CLI layer (T08) prepends the
     * prefix when printing (spec §10 `snap: <detail>`).
@@ -391,6 +420,12 @@ enum SnapError:
     case ConcurrentHistoryUnsupported(dot) => Messages.concurrentHistoryUnsupported(dot)
     // --- T15 additions ---
     case OtBaseMismatch => Messages.otBaseMismatch
+    // --- T10 additions ---
+    case UnsupportedWorkTreeEntry(path) => Messages.unsupportedWorkTreeEntry(path)
+    case InvalidWorkTreePath(path)      => Messages.invalidWorkTreePath(path)
+    case CannotReadWorkTree(detail)     => Messages.cannotReadWorkTree(detail)
+    case WorkingTreeClean               => Messages.workingTreeClean
+    case InvalidCommitMessage           => Messages.invalidCommitMessage
 
 /** Message catalog (DESIGN D5): every diagnostic string of the implementation lives here,
   * test-pinned ones verbatim. No other module builds diagnostic text. Where a provided test anchors
@@ -620,3 +655,19 @@ object Messages:
 
   /** Internal replay invariant (R71): both transform inputs must derive from one base tree. */
   val otBaseMismatch: String = "edit scripts consume different base token counts"
+  // --- T10 additions: working-tree scan + status/commit (SPEC §2, §7.3/§7.5, §10) ---
+
+  /** Pinned exactly (test 08, R21/R104): the path is root-relative with `/` separators. */
+  def unsupportedWorkTreeEntry(path: String): String = s"unsupported working tree entry: $path"
+
+  /** Untested wording (R23 applied to the working-tree scan). */
+  def invalidWorkTreePath(path: String): String = s"invalid working tree path: $path"
+
+  /** Untested wording (filesystem boundary, mirroring [[cannotReadRepository]]). */
+  def cannotReadWorkTree(detail: String): String = s"cannot read working tree: $detail"
+
+  /** Pinned verbatim (test 04, R85). */
+  val workingTreeClean: String = "working tree is clean"
+
+  /** Pinned verbatim (test 25, R85/D16) — one wording for every commit-message input violation. */
+  val invalidCommitMessage: String = "invalid commit message"

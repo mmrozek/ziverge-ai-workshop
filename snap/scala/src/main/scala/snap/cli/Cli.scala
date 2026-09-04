@@ -81,7 +81,9 @@ object Cli:
     * lands (T09 `init`/`config`, T10 `status`/`log`/`commit`, T11 `diff`, T12 `revert`, T17
     * `merge`, T19 `--serve`). `run`'s `commands` parameter defaults to this map; tests override
     * individual entries (e.g. to simulate an unexpected exception for the exit-2 path) without
-    * touching `Cli`. T09 replaces the `Init`/`Config` entries with their real handlers.
+    * touching `Cli`. T09 replaced the `Init`/`Config` entries with their real handlers; T10
+    * replaced `Status`/`Log`/`Commit` and gave `Diff` its scan-precedence seam ([[CommandsDiff]] —
+    * rendering is still stubbed until T11).
     */
   val defaultCommands: Map[Command, CommandHandler] =
     Command.values.iterator
@@ -90,6 +92,10 @@ object Cli:
       .toMap
       .updated(Command.Init, CommandsInit.handler)
       .updated(Command.Config, CommandsConfig.handler)
+      .updated(Command.Status, CommandsStatus.handler)
+      .updated(Command.Log, CommandsLog.handler)
+      .updated(Command.Commit, CommandsCommit.handler)
+      .updated(Command.Diff, CommandsDiff.handler)
 
   /** Runs one CLI invocation to completion and returns the process exit code (0/1 — R107; a
     * top-level catch-all for exit 2 lives in `Main`, not here, since it must also catch anything

@@ -30,8 +30,12 @@ class MainSuite extends munit.FunSuite:
   }
 
   test("an expected SnapError from a command handler maps to exit 1, not exit 2") {
+    // Injected handler (T10): the assertion is about Main's exit mapping, not about which
+    // commands still dispatch to the stub — status itself gained a real handler in T10.
+    val failing: CommandHandler = (_, _, _) => Left(snap.core.SnapError.NotImplemented)
+    val commands = Cli.defaultCommands.updated(Command.Status, failing)
     val fx = TestEnv(cwd = repoDir())
-    val exit = Main.run(fx.env, List("status"))
+    val exit = Main.run(fx.env, List("status"), commands)
     assertEquals(exit, 1)
     assertEquals(fx.stderr, "snap: not implemented\n")
   }

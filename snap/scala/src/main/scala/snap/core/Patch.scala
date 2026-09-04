@@ -98,9 +98,11 @@ object Patch:
   /** R48 with D16: nonempty; tab and LF allowed; no other ASCII control character including DEL
     * (D12); must have a UTF-8 encoding (no unpaired surrogate). The 4096-byte limit is `snap
     * commit`'s input rule alone (D16) and deliberately NOT enforced here — generated revert
-    * messages may be longer.
+    * messages may be longer. Public since T10: `snap commit` reuses this one canonical R48
+    * implementation for its input validation (adding the byte limit and remapping every violation
+    * to the pinned `invalid commit message` wording).
     */
-  private def checkMessage(message: String): Either[SnapError, Unit] =
+  def checkMessage(message: String): Either[SnapError, Unit] =
     if message.isEmpty then Left(SnapError.PatchMessageEmpty)
     else if message.exists(isForbiddenControl) then Left(SnapError.PatchMessageForbiddenCharacter)
     else if !StandardCharsets.UTF_8.newEncoder().canEncode(message) then
