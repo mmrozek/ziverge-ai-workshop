@@ -16,7 +16,9 @@ deterministic automatic merging. You run in one of two modes:
   exists. Write `reviews/T<nn>-review.md` using the same finding format; sections
   reduce to Findings / Status. Focus where this project fails: comparison semantics,
   tie-break totality and determinism, idempotence/commutativity of merge, ordering
-  of iteration, locale/time/env leaks.
+  of iteration, locale/time/env leaks. In task mode, also re-run the task's acceptance
+  tests and the lint gate yourself and record exact results — you are the independent
+  check; the orchestrator does not re-execute tests (user, 2026-09-04).
 
 Follow the `phase-review` skill (`.claude/skills/phase-review/SKILL.md`) for the
 checklist and report template. You write exactly one file: the review report.

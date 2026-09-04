@@ -25,12 +25,16 @@ Precondition: `docs/plan/PLAN.md` is approved. If it isn't, stop and use `projec
    tie-break logic or ≥3 SP. Parallel implementers only for tasks the plan flags
    parallel-safe (disjoint files) — spawn each with `isolation: "worktree"` (or a herdr
    pane), never the same tree; integrate back into `main` in plan order.
-3. **Verify (do not trust the report):** re-run the acceptance tests plus the full
-   project suite yourself, and the lint gate (`scalafmtCheckAll`, `scalafixAll --check`);
-   skim the diff for scope creep, contract modifications (snap/SPEC.md, snap/tests/,
-   harness — forbidden), nondeterminism
-   smells (time, randomness, unordered iteration in domain logic), and unjustified
-   `scalafix:ok` suppressions.
+3. **Integrate (don't re-execute — user, 2026-09-04):** verification is the
+   implementer's job — it runs the acceptance tests and the lint gate and reports exact
+   results; the orchestrator does NOT re-run them. The orchestrator's check is a **diff
+   skim only**: scope creep, contract modifications (snap/SPEC.md, snap/tests/,
+   harness — forbidden), nondeterminism smells (time, randomness, unordered iteration
+   in domain logic), and unjustified `scalafix:ok` suppressions. Independent
+   re-execution belongs to the reviewer (risky-task pre-commit reviews and phase
+   reviews). Exception: worktree-isolated tasks — after applying the diff back onto
+   `main` the implementer's run no longer covers the integrated state, so have the
+   implementer (or a fresh one) verify on `main`; still not the orchestrator.
 4. **Risky-task review (Risk: core only — clock compare / merge / tie-break):** before
    committing, launch the `reviewer` agent in task mode on the working-tree diff
    (strong model, no downgrade). It writes `reviews/T<nn>-review.md`. Triage its
@@ -49,8 +53,10 @@ Precondition: `docs/plan/PLAN.md` is approved. If it isn't, stop and use `projec
 
 ## Phase boundary
 
-When the last task of a phase is done: run the full provided suite, then switch to the
-`phase-review` skill. Do not start the next phase's tasks before the review gate clears.
+When the last task of a phase is done, switch to the `phase-review` skill; the
+**reviewer** runs the full provided suite and the lint gate as part of the phase review
+(its procedure step 2) — the orchestrator doesn't. Do not start the next phase's tasks
+before the review gate clears.
 
 ## Reporting
 
