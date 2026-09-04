@@ -102,6 +102,7 @@ object Cli:
       .updated(Command.Diff, CommandsDiff.handler)
       .updated(Command.Revert, CommandsRevert.handler)
       .updated(Command.Serve, CommandsServe.handler)
+      .updated(Command.Merge, CommandsMerge.handler)
 
   /** Runs one CLI invocation to completion and returns the process exit code (0/1 — R107; a
     * top-level catch-all for exit 2 lives in `Main`, not here, since it must also catch anything

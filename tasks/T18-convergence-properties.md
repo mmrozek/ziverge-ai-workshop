@@ -47,6 +47,19 @@ byte-identical across repeated runs. Fix whatever divergence the matrix tests ex
   warning set is unaffected by them. Without this test, a future edit that folds
   `materializeMemo`'s warnings into the outer accumulator — a plausible "surely additive"
   refactor — would pass every existing test while over-reporting in `merge`.
+- From `reviews/T17-review.md` finding 1 (deferred here at triage — **part 2**, the
+  `merge`-level half): R76 direction independence is currently asserted only against a
+  fixture exercising OT and later-create-wins. The generator must merge in **both
+  directions** across all five warning reasons (delete-wins, later-create-wins,
+  later-put-wins, namespace-wins, put-wins), comparing version, warnings, the full
+  working-tree byte map and `repository.json` bytes. The risk this closes: a change that
+  breaks symmetry only in the presence of one specific reason — e.g. an accidental
+  dependency on which side's `Patch` reference survives a colliding-but-equal dot — would
+  pass every currently committed test.
+- From `reviews/T17-review.md` finding 2 (deferred here at triage — **part 2**): dot
+  collision reporting is pinned only by a single-collision fixture, so both directions
+  trivially agree. Generate histories with **multiple simultaneous colliding dots** and
+  assert the smallest in dot order is the one reported, in both directions.
 - From `reviews/T16-review.md` nit 2 (deferred here at triage): replace the prose
   generator-coverage claim in `ConcurrentReplayLawsSuite`'s scaladoc ("200 samples, 96
   with warnings, all five reasons…") with an assertion, so the property suite cannot

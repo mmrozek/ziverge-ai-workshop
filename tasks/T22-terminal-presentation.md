@@ -33,3 +33,14 @@ execution/effects/exit codes (R92). Real TTY probe per D20 behind the `Tty` trai
       constraint — assert no probe under `NO_COLOR=1`).
 
 ## Notes / decisions
+
+## Pre-implementation pointers
+- From `reviews/T17-review.md` nit 3 (deferred here at triage): there are **two**
+  `Presentation` call sites, not one. `Cli.emit` is the usual seam, but
+  `snap/cli/CommandsMerge.scala:80` reaches `Presentation.Plain` directly to print the
+  `warning: auto-resolved …` lines. No behavioral difference today — every site is
+  hardcoded to `Plain` until this task introduces selection — but T22 must update both
+  and decide how a command handler (whose return type currently carries only one stdout
+  string) obtains the correctly selected **stderr** presentation for warnings. Routing
+  merge's warnings back through `Cli.emit` is the obvious direction; whichever way it
+  goes, R92 requires the warning order to be identical in plain and terminal mode.

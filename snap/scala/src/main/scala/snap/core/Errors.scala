@@ -789,3 +789,14 @@ object Messages:
     * `raw` is untrusted CLI argv text read before validation — sanitized (PR1/CR3).
     */
   def invalidPort(raw: String): String = s"invalid port: ${sanitizeControlChars(raw)}"
+  // --- T17 additions: `merge` warning line (SPEC §6.4/§7.8, R75) ---
+
+  /** The detail half of the pinned warning line `warning: auto-resolved <path>: <reason>` (tests
+    * 10/11/17 byte-pin whole lines). Not an error — merge succeeds — but a pinned diagnostic
+    * string, so it lives in this catalog (D5); the `warning: ` prefix belongs to the presentation
+    * ([[snap.cli.Presentation]]), mirroring `snap: ` on errors (§7.11 restyles exactly the prefix
+    * in terminal mode — T22). Both halves are validated values ([[SnapPath]], the spec's reason
+    * vocabulary via [[WarningReason.text]]), so nothing here needs sanitizing.
+    */
+  def autoResolved(warning: Warning): String =
+    s"auto-resolved ${warning.path.value}: ${warning.reason.text}"

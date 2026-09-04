@@ -17,6 +17,12 @@ trait Presentation:
     */
   def error(env: Env, detail: String): Unit
 
+  /** A warning detail, without the `warning: ` prefix (spec §6.4/§7.11: a plain warning is one line
+    * `warning: <detail>`; terminal mode restyles it — T22). Only `merge` emits warnings (R75, T17);
+    * the command decides selection and order (R92), a `Presentation` only renders each line.
+    */
+  def warning(env: Env, detail: String): Unit
+
 object Presentation:
 
   /** The byte-stable presentation (spec §7.11) — the only implementation until T22 adds `Terminal`.
@@ -31,3 +37,7 @@ object Presentation:
       // Literal LF, not `println` (which appends the platform `line.separator`) — spec §10 requires
       // LF line endings regardless of host/JVM (PR2/CR6).
       env.stderr.print(s"snap: $detail\n")
+
+    def warning(env: Env, detail: String): Unit =
+      // Same literal-LF rule as `error`; tests 10/11/17 byte-pin whole warning lines.
+      env.stderr.print(s"warning: $detail\n")

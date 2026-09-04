@@ -69,12 +69,15 @@ class CliSuite extends munit.FunSuite:
 
   test("known-but-unimplemented commands print 'not implemented' once a repo is found") {
     // T10 removed status/log/commit/diff from this list (real handlers now); T12 removed
-    // revert; the remainder shrinks further as T17/T19 land. T13 gave `merge`/`--serve` real
-    // grammar (SPEC §7.8/§7.9, Grammar) — `merge` now needs its one repository operand to reach
-    // the stub at all (a bare `merge` is itself a grammar error, covered separately below).
+    // revert; T17 removed merge (real handler now); only `--serve` is left, and it goes when
+    // T19 lands. T13 gave `--serve` real grammar (SPEC §7.9, Grammar), but that rule is
+    // arity-only (at most one operand) — a bare `--serve` passes it, defaults to port 8765
+    // (D9), and is what reaches the stub below. An invalid port *value* is not a grammar error
+    // at all: it's caught afterward by `CommandsServe`'s own value check, which fails before the
+    // stub with `invalid port: <arg>` instead (unit-pinned in `CommandsServeSuite`, not here).
     val root = tempDir()
     Files.createDirectory(root.resolve(".snap"))
-    for args <- List(List("merge", "other-repo"), List("--serve")) do
+    for args <- List(List("--serve")) do
       val fx = TestEnv(cwd = root)
       val exit = Cli.run(fx.env, args)
       assertEquals(exit, 1, s"command $args")
