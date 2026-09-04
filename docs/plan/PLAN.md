@@ -244,3 +244,23 @@ task that implements them (holdout assumption — implemented and unit-tested, n
   started alongside the phase-1 endgame; phase 2 starts right after T10). Review gates
   unchanged: each phase closes only after its findings are triaged and fixes committed.
   CLAUDE.md ground rule 6 and the task-loop phase boundary amended accordingly.
+- 2026-09-05 — **T18 delivered in two passes** (orchestrator, no scope change). Its
+  `merge`-level properties need T17, which was still in review when the core-level half
+  could already start, so the task was split: `720f7e5` landed the core-level suite and
+  the four deferred review goldens, and the second pass added the command-level
+  properties. Deviates from "one task = one commit" (ground rule 4) for this task only;
+  both commits carry the `T18:` subject and `TASKS.md` records both. The single
+  pre-commit core review covers both passes.
+- 2026-09-05 — **three tasks became hardening rather than test-turning tasks**, because
+  earlier work turned their provided tests green ahead of schedule. T14's five (15, 19,
+  23, 25, 27) were already passing when it started, so it delivered a trigger-site and
+  catalog audit plus one genuine R103 gap. T18's two (18, 22) were turned green by T17's
+  `merge`. T21's three (16, 20, 26) are turned green by T17 and T20 — 20 by `merge`, and
+  16 and 26 by T20's remote operands. None of these tasks is therefore redundant: under
+  the standing holdout assumption their value is the coverage and audit work, and the
+  scope in each task file stands unchanged.
+- 2026-09-05 — **no plan-structure change, recorded for traceability:** the provided
+  suite reached 28/28 across two un-integrated worktrees (T20 at 27/28, T22 at 25/28)
+  before either landed on `main`. The remaining work is integration, the phase-3/4/5
+  gates, T21 and T23's hardening, and the post-completion audit — which the user has
+  authorised to run on Opus.
