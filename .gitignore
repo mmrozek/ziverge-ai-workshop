@@ -26,3 +26,11 @@ venv/
 coverage/
 .coverage
 *.log
+
+# Scala (snap/scala/) — sbt build output and IDE/BSP metadata (T01)
+snap/scala/target/
+snap/scala/project/target/
+snap/scala/project/project/
+.bloop/
+.bsp/
+.metals/

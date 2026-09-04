@@ -6,7 +6,7 @@ the **only** place status lives.
 
 | Task | Phase | Title | SP | Status | Depends | Commit |
 |---|---|---|---|---|---|---|
-| T01 | 1 | Scala workspace skeleton & lint gate | 2 | todo | — | |
+| T01 | 1 | Scala workspace skeleton & lint gate | 2 | done | — | |
 | T02 | 1 | Strict JSON layer & canonical writer | 3 | todo | T01 | |
 | T03 | 1 | Version algebra (compare/join/snap order) | 3 | todo | T01 | |
 | T04 | 1 | Paths, Utf8Order, trees | 2 | todo | T01 | |
