@@ -57,3 +57,6 @@ tests in `snap/scala/src/test/scala/snap/core/`.
   (exact consumption still enforced) — reviewer-confirmed spec-forced (§6.5) — and
   render merged output to BYTES, re-tokenizing for downstream use; never let the
   non-canonical token list escape the transform site (finding 1).
+- Phase-1 review CR1 (stack half): the T07-era replay loop was non-tail and could
+  StackOverflow on ~1k+ patch valid histories. Your rewritten engine must be verified
+  stack-safe at the pre-commit review (deep linear-history probe); fix in-place if not.

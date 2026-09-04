@@ -26,7 +26,9 @@ object Main:
     catch
       case t: Throwable =>
         val detail = Option(t.getMessage).getOrElse(t.getClass.getName)
-        env.stderr.println(s"snap: ${Messages.internalError(detail)}")
+        // Literal LF, not `println` (which appends the platform `line.separator`) — spec §10
+        // requires LF line endings regardless of host/JVM (PR2/CR6).
+        env.stderr.print(s"snap: ${Messages.internalError(detail)}\n")
         2
 
   def main(args: Array[String]): Unit =

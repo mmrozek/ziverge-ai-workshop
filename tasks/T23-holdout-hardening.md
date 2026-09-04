@@ -34,3 +34,9 @@ tests in `snap/scala/src/test/scala/`. No new modules.
       audit (`scala-antipatterns` skill) clean before the phase-5 review.
 
 ## Notes / decisions
+
+## Pre-implementation pointers (phase-1 review triage)
+- PR5/CR1: Θ(n²) replay (measured 800 patches → 9.3 s for one status) — optimize only
+  against a measured suite timeout; re-measure after T16's engine landed.
+- CR12b: consolidate the four hand-copied byte-equality/hash helpers into one
+  `snap.core` utility (Replay/WorkingChanges/Tree/Patch).

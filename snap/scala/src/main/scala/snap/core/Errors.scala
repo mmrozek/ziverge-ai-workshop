@@ -433,10 +433,33 @@ enum SnapError:
   * rendered message and nothing is ever appended after it.
   */
 object Messages:
-  /** Pinned shape `duplicate JSON key <k>` (test 25 matches `^snap: duplicate JSON key .+\n$`, test
-    * 15 the substring).
+  /** Escapes ASCII control characters — including LF/CR/TAB — in untrusted, interpolated text so a
+    * rendered diagnostic never spans more than one physical line (R107: "In plain mode, errors are
+    * one line `snap: <detail>`"). Applied only at call sites where the interpolated value is not
+    * yet validated and so may legally contain such characters (JSON object keys/field names read
+    * before schema validation, raw working-tree entry names) — never to this catalog's own pinned
+    * text, which never contains a control character. `\n`/`\r`/`\t` use their short mnemonic; every
+    * other ASCII control character (0x00–0x1F, and DEL 0x7F per D12) renders as `\u00xx`, mirroring
+    * [[snap.json.Writer.quote]]'s locale-independent hex. Identity on any string without a control
+    * character, so it never changes an already-pinned assertion (tests 02/03/08/15/23/25
+    * interpolate benign names).
     */
-  def duplicateJsonKey(key: String): String = s"duplicate JSON key $key"
+  private def sanitizeControlChars(text: String): String =
+    text.flatMap {
+      case '\n'                          => "\\n"
+      case '\r'                          => "\\r"
+      case '\t'                          => "\\t"
+      case c if c < ' ' || c == '\u007f' =>
+        val hex = Integer.toHexString(c.toInt)
+        if hex.length == 1 then "\\u000" + hex else "\\u00" + hex
+      case c => c.toString
+    }
+
+  /** Pinned shape `duplicate JSON key <k>` (test 25 matches `^snap: duplicate JSON key .+\n$`, test
+    * 15 the substring). `key` is untrusted (read before validation) — sanitized (PR1/CR3).
+    */
+  def duplicateJsonKey(key: String): String =
+    s"duplicate JSON key ${sanitizeControlChars(key)}"
 
   /** Only the substring `invalid JSON` is pinned (tests 03/13); position is a courtesy detail, kept
     * single-line and free of input echoes.
@@ -505,14 +528,18 @@ object Messages:
 
   /** Shape `<owner> has unknown field: <f>` — pinned exactly at the top level (test 23:
     * `repository has unknown field: unknown`); the change level anchors `unknown field: <f>` at the
-    * end of the line (test 23), the patch level is shape-only (test 27).
+    * end of the line (test 23), the patch level is shape-only (test 27). `owner` is always one of
+    * this catalog's own fixed strings (`repository`/`patch`/`change`); `field` is an untrusted JSON
+    * key read before schema validation, so only it is sanitized (PR1/CR3).
     */
-  def unknownField(owner: String, field: String): String = s"$owner has unknown field: $field"
+  def unknownField(owner: String, field: String): String =
+    s"$owner has unknown field: ${sanitizeControlChars(field)}"
 
-  def missingField(owner: String, field: String): String = s"$owner is missing field: $field"
+  def missingField(owner: String, field: String): String =
+    s"$owner is missing field: ${sanitizeControlChars(field)}"
 
   def fieldWrongType(owner: String, field: String): String =
-    s"$owner field $field has the wrong type"
+    s"$owner field ${sanitizeControlChars(field)} has the wrong type"
 
   val repositoryFormatInvalid: String = "repository format must be 1"
 
@@ -657,11 +684,18 @@ object Messages:
   val otBaseMismatch: String = "edit scripts consume different base token counts"
   // --- T10 additions: working-tree scan + status/commit (SPEC §2, §7.3/§7.5, §10) ---
 
-  /** Pinned exactly (test 08, R21/R104): the path is root-relative with `/` separators. */
-  def unsupportedWorkTreeEntry(path: String): String = s"unsupported working tree entry: $path"
+  /** Pinned exactly (test 08, R21/R104): the path is root-relative with `/` separators. `path` is
+    * raw, unvalidated filesystem text — sanitized (PR1/CR3) since it may legally contain control
+    * characters (that is precisely why the entry is unsupported/invalid in the first place).
+    */
+  def unsupportedWorkTreeEntry(path: String): String =
+    s"unsupported working tree entry: ${sanitizeControlChars(path)}"
 
-  /** Untested wording (R23 applied to the working-tree scan). */
-  def invalidWorkTreePath(path: String): String = s"invalid working tree path: $path"
+  /** Untested wording (R23 applied to the working-tree scan). `path` is raw, unvalidated filesystem
+    * text — sanitized (PR1/CR3).
+    */
+  def invalidWorkTreePath(path: String): String =
+    s"invalid working tree path: ${sanitizeControlChars(path)}"
 
   /** Untested wording (filesystem boundary, mirroring [[cannotReadRepository]]). */
   def cannotReadWorkTree(detail: String): String = s"cannot read working tree: $detail"

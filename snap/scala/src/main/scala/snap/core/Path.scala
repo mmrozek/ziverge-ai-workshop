@@ -4,10 +4,10 @@ import scala.annotation.tailrec
 
 /** Why a raw string is not a valid tracked path (SPEC §2 / R23).
   *
-  * Minimal local error type: `snap/core/Errors.scala` (built by a parallel task) does not exist in
-  * this task's scope. When the `SnapError` catalog lands, these reasons map into it; until then
-  * callers only need "invalid, and why" for diagnostics. Checks run in the declaration order below;
-  * the first failure is reported.
+  * Carried, not rendered: [[SnapError.ChangePathInvalid]] wraps a `PathError` for structure, but
+  * [[Messages]] only ever emits the pinned `path is invalid` fragment (test 15) — the specific
+  * reason never reaches a diagnostic (PR7). Checks run in the declaration order below; the first
+  * failure is reported.
   */
 enum PathError:
   /** The raw path is the empty string. */

@@ -141,6 +141,25 @@ class RepoCodecSuite extends ScalaCheckSuite:
     )
   }
 
+  test(
+    "an unknown change field is reported even with no `type` at all (CR9: unknown-field check " +
+      "runs before `type` extraction)"
+  ) {
+    assertEquals(
+      rejectionMessage(repoWithChange("""{"path": "f", "bogus": 1}""")),
+      "change has unknown field: bogus"
+    )
+  }
+
+  test(
+    "an unknown change field is reported ahead of an invalid `type` value (CR9)"
+  ) {
+    assertEquals(
+      rejectionMessage(repoWithChange("""{"type": "frob", "path": "f", "bogus": 1}""")),
+      "change has unknown field: bogus"
+    )
+  }
+
   // ------------------------------------------------------------ missing fields / wrong types
 
   test("missing required fields are named at every level") {

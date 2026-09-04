@@ -37,6 +37,18 @@ class StoreConfigSuite extends FunSuite:
     assertEquals(Store.readConfig(file), Right(None))
   }
 
+  test(
+    "an unreadable config path is CannotReadConfig, not silently folded into absent (CR10)"
+  ) {
+    // A directory stand-in for "exists but cannot be read as a file": `Files.readAllBytes` on a
+    // directory fails with an I/O error that is NOT `NoSuchFileException`, so the attempt-read gate
+    // must distinguish it from genuine absence rather than reporting `Right(None)`.
+    val dirAsFile = tempDir()
+    Store.readConfig(dirAsFile) match
+      case Left(SnapError.CannotReadConfig(_)) => ()
+      case other                               => fail(s"expected CannotReadConfig, got $other")
+  }
+
   test("write then read round-trips the contributor id") {
     val file = tempDir().resolve("config.json")
     val alice = id("alice@example.com")

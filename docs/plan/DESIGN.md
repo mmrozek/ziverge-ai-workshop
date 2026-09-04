@@ -239,6 +239,10 @@ seam — the facade builds our `Json` AST directly and we own everything the con
 | D22 | Console encoding | stdout/stderr wrapped as UTF-8 `PrintStream`s in `Main`, unconditionally | gotcha 7; harness runs `LC_ALL=C` |
 | D23 | Comparators | single `Utf8Order` (unsigned UTF-8 byte order) for paths, ids, version sort, snap order | §3; risk note 3 |
 
+| D24 | Empty `HOME` | treated as unavailable, same as absent (never resolved against cwd) | phase-1 review CR2; §8 says "absent", empty has no sane resolution |
+| D25 | Root `.snap` symlink | discovery/init require a real directory (NOFOLLOW); the scanner reports a root `.snap` symlink as an unsupported entry — the metadata exclusion applies only to the real directory | phase-1 review CR5; §2 MUST-report / MUST-NOT-follow |
+| D26 | Integer-ness of JSON numbers | judged from the decimal spelling: `1.0`, `1e2` are rejected wherever an integer is required | phase-1 review CR13; §4.1 "non-integer numbers … are errors"; our writer never emits such spellings |
+
 New runtime dependencies require a new row here first (conventions rule).
 
 ## §10 Known gotchas (per module)

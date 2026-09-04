@@ -10,6 +10,7 @@ import snap.json.JsonParser
 import snap.json.RepoCodec
 
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
@@ -25,20 +26,24 @@ import scala.util.Try
   * `JsonParser`'s jawn boundary). Everything else stays pure: reading composes bytes → strict parse
   * → typed decode → structural validation, writing serializes through the one canonical writer.
   *
-  * Writes are atomic (R105): canonical bytes go to a fixed-name temp file in the *same directory*
-  * as the target, then an `ATOMIC_MOVE` rename replaces the target. Same-directory placement makes
-  * a cross-device move impossible by construction (gotcha 10); a crash before the move leaves the
-  * target untouched — only the temp file can ever hold partial content.
+  * Writes are atomic (R105): canonical bytes go to a `<target-filename>.tmp` temp file in the *same
+  * directory* as the target (PR4/CR11 — the name is derived from the target, so the repository
+  * writer and either configuration writer never share a temp path), then an `ATOMIC_MOVE` rename
+  * replaces the target. Same-directory placement makes a cross-device move impossible by
+  * construction (gotcha 10); a crash before the move leaves the target untouched — only the temp
+  * file can ever hold partial content.
   */
 object Store:
 
   /** The repository file name inside `.snap/` (SPEC §4.1, R39). */
   val RepositoryFileName: String = "repository.json"
 
-  /** Fixed temp name — deterministic, same directory as the target; single-process access is the
-    * spec's model (no concurrent writers), so a constant name is safe.
+  /** Temp file suffix — deterministic, same directory as the target (PR4/CR11); single-process
+    * access is the spec's model (no concurrent writers), so `<target-filename>.tmp` is safe and
+    * cannot collide between the repository writer and either configuration writer, unlike a single
+    * shared name.
     */
-  private val TempFileName: String = "repository.json.tmp"
+  private val TempFileSuffix: String = ".tmp"
 
   /** Reads and fully loads a repository file: bytes → UTF-8 check → strict JSON parse → typed
     * decode → full validation (§4.5 steps 1–6, [[Repo.validateFully]] — T07). The returned
@@ -47,9 +52,10 @@ object Store:
   def readRepository(file: Path): Either[SnapError, Repo.Valid] =
     for
       bytes <- attempt(Files.readAllBytes(file))(readFailure)
-      // A valid repository document is UTF-8 text without NUL; `TextTokens.decode`
-      // is exactly that gate and never falls back to the platform charset (gotcha 7).
-      text <- TextTokens.decode(bytes).toRight(SnapError.RepositoryNotUtf8)
+      // UTF-8 validity only (CR-NUL) — never falls back to the platform charset (gotcha 7). A raw
+      // NUL is valid UTF-8 and falls through to the JSON parser, which reports its own positioned
+      // `invalid JSON` diagnostic rather than being pre-empted here.
+      text <- TextTokens.decodeUtf8(bytes).toRight(SnapError.RepositoryNotUtf8)
       json <- JsonParser.parse(text)
       repository <- RepoCodec.decode(json)
       valid <- Repo.validateFully(repository)
@@ -71,8 +77,8 @@ object Store:
   ): Either[SnapError, Unit] =
     stage(target, bytes, onError).flatMap(temp => commit(temp, target, onError))
 
-  /** Step 1 of the atomic write: the full content lands in `<dir>/repository.json.tmp` (or the
-    * config equivalent). The target is not touched. Exposed to the package so tests can assert the
+  /** Step 1 of the atomic write: the full content lands in `<dir>/<target-filename>.tmp`
+    * (PR4/CR11). The target is not touched. Exposed to the package so tests can assert the
     * crash-window invariant (a failure after staging leaves the target byte-identical).
     */
   private[fs] def stage(
@@ -104,7 +110,7 @@ object Store:
     )(onError).map(_ => ())
 
   private[fs] def tempPathFor(target: Path): Path =
-    target.resolveSibling(TempFileName)
+    target.resolveSibling(target.getFileName.toString + TempFileSuffix)
 
   private def readFailure(e: Throwable): SnapError =
     SnapError.CannotReadRepository(describe(e))
@@ -126,16 +132,24 @@ object Store:
     * pipeline as [[readRepository]], so a malformed file, an unknown/duplicate field, or an invalid
     * id is reported exactly when R99 requires it (only for a file that is actually read). Performs
     * no filesystem mutation.
+    *
+    * Absence is detected by attempting the read, not a prior `Files.exists` gate (CR10): a
+    * `NoSuchFileException` is "no value" (R99), while any other I/O failure (e.g. a permission
+    * error) is [[SnapError.CannotReadConfig]] rather than being silently folded into "absent" — the
+    * two outcomes are observably different (an unreadable local config must not fall back to
+    * global, or an unreadable global config to "no value").
     */
   def readConfig(file: Path): Either[SnapError, Option[ContributorId]] =
-    if !Files.exists(file) then Right(None)
-    else
-      for
-        bytes <- attempt(Files.readAllBytes(file))(readConfigFailure)
-        text <- TextTokens.decode(bytes).toRight(SnapError.ConfigNotUtf8)
-        json <- JsonParser.parse(text)
-        id <- ConfigCodec.decode(json)
-      yield Some(id)
+    Try(Files.readAllBytes(file)) match
+      case Failure(_: NoSuchFileException) => Right(None)
+      case Failure(e)                      => Left(readConfigFailure(e))
+      case Success(bytes)                  =>
+        for
+          // UTF-8 validity only (CR-NUL) — see readRepository.
+          text <- TextTokens.decodeUtf8(bytes).toRight(SnapError.ConfigNotUtf8)
+          json <- JsonParser.parse(text)
+          id <- ConfigCodec.decode(json)
+        yield Some(id)
 
   /** Serializes `id` canonically (D7) and atomically overwrites `file` completely (SPEC §8:
     * "preserves no unknown fields") — the previous content, if any, is never read first.

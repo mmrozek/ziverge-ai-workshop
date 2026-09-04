@@ -62,15 +62,17 @@ object Repo:
       tree <- Replay.materialize(structure, repository.frontier, Replay.LinearOnly)
     yield Valid(structure, tree)
 
-  /** Runs steps 2–4 in a fixed order (sorting/dots → increments → contiguity → base closure →
-    * frontier closure → reachability → acyclicity); the first violation decides.
+  /** Runs steps 2–4 in a fixed order — step 2 in full (sorting/dots → contiguity) before step 3
+    * (increments → base closure), then frontier closure → reachability → acyclicity (PR3/CR8: a
+    * doubly-invalid history reports step 2's diagnostic class, matching §4.5's own numbering); the
+    * first violation decides.
     */
   def validate(repository: Repository): Either[SnapError, StructurallyValid] =
     val patches = repository.patches
     for
       _ <- checkSortedAndDots(patches)
-      _ <- checkIncrements(patches)
       _ <- checkContiguity(patches)
+      _ <- checkIncrements(patches)
       dots = patches.iterator.map(_.dot).toSet
       _ <- checkBaseClosure(patches, dots)
       _ <- checkFrontierClosure(repository.frontier, dots)

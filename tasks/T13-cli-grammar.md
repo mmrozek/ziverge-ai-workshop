@@ -31,3 +31,8 @@ T19; grammar and port parsing land now). DESIGN §8.
       grammar error, not `not a Snap repository`).
 
 ## Notes / decisions
+
+## Pre-implementation pointers (phase-1 review triage)
+- CR7: grammar/arity validation MUST run before repository discovery for every command
+  (already an acceptance criterion here — a holdout grammar case outside a repo pins it).
+- CR14: `snap init ""` currently initializes cwd — empty operands are grammar errors.

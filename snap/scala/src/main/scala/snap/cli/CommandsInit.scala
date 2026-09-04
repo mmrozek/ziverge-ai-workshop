@@ -5,6 +5,7 @@ import snap.core.SnapError
 import snap.fs.Store
 
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 
 /** `snap init [path]` (SPEC §7.1, R80–R81). No repository discovery precedes it ([[Command
@@ -46,11 +47,16 @@ object CommandsInit:
     * repository is an error). The first `.snap` found decides which of the two applies: at `target`
     * itself it's a reinit, at any ancestor it's nesting. Read-only — never creates anything, so a
     * failure here leaves the filesystem untouched (both errors require "no `.snap` is created").
+    * `.snap` must be a real directory — checked with `NOFOLLOW_LINKS` (D25) — so a symlinked
+    * `.snap` is neither treated as an existing repository to reinit nor as an ancestor to nest
+    * inside; `init` then proceeds by its normal rules and fails naturally when it tries to create a
+    * directory where the symlink already sits (least-surprising: neither silently follows nor
+    * silently succeeds).
     */
   private def checkNotInsideRepository(target: Path): Either[SnapError, Unit] =
     @annotation.tailrec
     def loop(dir: Path): Either[SnapError, Unit] =
-      if Files.isDirectory(dir.resolve(".snap")) then
+      if Files.isDirectory(dir.resolve(".snap"), LinkOption.NOFOLLOW_LINKS) then
         if dir == target then Left(SnapError.RepositoryAlreadyExists(target.toString))
         else Left(SnapError.CannotInitializeInsideRepository(dir.toString))
       else

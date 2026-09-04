@@ -17,13 +17,20 @@ object Config:
   /** `.snap/config.json` inside a repository (SPEC §8). */
   def localFile(repoRoot: Path): Path = repoRoot.resolve(".snap").resolve(Store.ConfigFileName)
 
-  /** `$HOME/.snapconfig.json`, or `None` when `HOME` is absent from the environment (R99: "If
-    * `$HOME` is absent, global configuration is unavailable" — not an error by itself on the read
-    * side; only a `--global` *write* turns this into [[SnapError.GlobalConfigUnavailable]], in
-    * [[CommandsConfig]]).
+  /** `$HOME/.snapconfig.json`, or `None` when `HOME` is absent — or present but empty (D24, CR2) —
+    * from the environment (R99: "If `$HOME` is absent, global configuration is unavailable" — not
+    * an error by itself on the read side; only a `--global` *write* turns this into
+    * [[SnapError.GlobalConfigUnavailable]], in [[CommandsConfig]]). Both callers (read-side
+    * [[resolve]] and the write-side [[CommandsConfig]]) go through this one function, so `HOME=""`
+    * is unavailable everywhere alike; without the empty-string guard, `Paths.get("")` would
+    * silently resolve `.snapconfig.json` against the process cwd instead of reporting "no global
+    * config".
     */
   def globalFile(env: Env): Option[Path] =
-    env.env.get("HOME").map(home => Paths.get(home).resolve(Store.GlobalConfigFileName))
+    env.env
+      .get("HOME")
+      .filter(_.nonEmpty)
+      .map(home => Paths.get(home).resolve(Store.GlobalConfigFileName))
 
   /** R99's precedence: read and validate the local file first; if it yields an id, the global file
     * is never read at all (so a malformed global file is irrelevant whenever local provides an id —

@@ -75,6 +75,20 @@ class RepoValidateSuite extends FunSuite:
     assertEquals(errorMessage(repository), "patch history is missing a@x revision 2")
   }
 
+  test(
+    "doubly-invalid history reports step 2's missing-revision class before step 3's increment " +
+      "check (PR3/CR8)"
+  ) {
+    // frontier a@x->2 with a single patch at revision 2 whose base is empty ([]): both step 2
+    // (contiguity — revision 1 is missing) and step 3 (revision != base[a@x]+1 = 1) are violated.
+    // §4.5 runs step 2 before step 3, so the reported class must be the missing patch, not the
+    // increment mismatch.
+    val repository = Repository(v("a@x" -> 2L), Vector(patch("a@x", 2L, Version.empty)))
+    val result = Repo.validate(repository)
+    assertEquals(result, Left(SnapError.MissingPatch(Dot(id("a@x"), 1L))))
+    assertEquals(result.left.map(_.message), Left("patch history is missing a@x revision 1"))
+  }
+
   test("patches not sorted by author are rejected (test 27)") {
     val repository = Repository(
       v("a@x" -> 1L, "b@x" -> 1L),

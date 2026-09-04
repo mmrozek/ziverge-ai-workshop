@@ -45,6 +45,25 @@ class WorkTreeSuite extends munit.FunSuite:
     assertEquals(scanPaths(root), Vector("a.txt", "sub/.snap/inner"))
   }
 
+  test(
+    "a root-level .snap that is a symlink is reported as unsupported, not silently skipped (D25)"
+  ) {
+    val root = Files.createTempDirectory("snap-worktree-test")
+    val realDir = Files.createTempDirectory("snap-worktree-test-target")
+    Files.createSymbolicLink(root.resolve(".snap"), realDir)
+    write(root, "a.txt", "a\n")
+    val result = WorkTree.scan(root)
+    assertEquals(result, Left(SnapError.UnsupportedWorkTreeEntry(".snap")))
+    assertEquals(result.left.map(_.message), Left("unsupported working tree entry: .snap"))
+  }
+
+  test("a root-level .snap that is a regular file stays excluded, not reported (T10)") {
+    val root = Files.createTempDirectory("snap-worktree-test")
+    write(root, ".snap", "not metadata\n")
+    write(root, "a.txt", "a\n")
+    assertEquals(scanPaths(root), Vector("a.txt"))
+  }
+
   test("empty directories are invisible, including nested ones (R19; test 25's premise)") {
     val root = repoRoot()
     Files.createDirectories(root.resolve("empty"))
@@ -59,6 +78,18 @@ class WorkTreeSuite extends munit.FunSuite:
     val result = WorkTree.scan(root)
     assertEquals(result, Left(SnapError.UnsupportedWorkTreeEntry("link")))
     assertEquals(result.left.map(_.message), Left("unsupported working tree entry: link"))
+  }
+
+  test(
+    "an unsupported entry named with a control character renders as one line (PR1/CR3)"
+  ) {
+    val root = repoRoot()
+    Files.createSymbolicLink(root.resolve("bad\nname"), Path.of("missing"))
+    val result = WorkTree.scan(root)
+    assertEquals(result, Left(SnapError.UnsupportedWorkTreeEntry("bad\nname")))
+    val message = result.left.map(_.message)
+    assertEquals(message, Left("unsupported working tree entry: bad\\nname"))
+    assert(message.left.exists(!_.contains("\n")), message)
   }
 
   test("a broken symlink is unsupported too, never followed (test 08's shape)") {

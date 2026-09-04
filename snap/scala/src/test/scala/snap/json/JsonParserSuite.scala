@@ -84,6 +84,16 @@ class JsonParserSuite extends munit.FunSuite:
     )
   }
 
+  test(
+    "a duplicate key containing LF renders as one physical line in the message (PR1/CR3)"
+  ) {
+    val input = "{\"a\\nb\":1,\"a\\nb\":2}"
+    assertEquals(JsonParser.parse(input), Left(SnapError.DuplicateJsonKey("a\nb")))
+    val message = parseFailureMessage(input)
+    assertEquals(message, "duplicate JSON key a\\nb")
+    assert(!message.contains("\n"), message)
+  }
+
   test("a duplicate key wins over a later syntax error") {
     assertEquals(
       JsonParser.parse("""{"a":1,"a":2,"""),

@@ -93,6 +93,17 @@ class ConfigSuite extends FunSuite:
     assertEquals(Config.resolve(env, repo), Right(None))
   }
 
+  test("HOME=\"\" makes the global file unavailable, same as absent (D24/CR2)") {
+    val env = envWithHome(Some(Path.of("")))
+    assertEquals(Config.globalFile(env), None)
+  }
+
+  test("HOME=\"\" makes global unavailable, not an error, when local provides no id (D24/CR2)") {
+    val repo = repoWithLocalConfig(None)
+    val env = envWithHome(Some(Path.of("")))
+    assertEquals(Config.resolve(env, repo), Right(None))
+  }
+
   test("absent HOME never matters when local already provides an id") {
     val repo = repoWithLocalConfig(Some("""{"contributor":{"id":"local@x"}}"""))
     val env = envWithHome(None)

@@ -80,6 +80,33 @@ class StoreSuite extends FunSuite:
     assertEquals(listed.size(), 1)
   }
 
+  test("the temp name is derived from the target file name, same directory (PR4/CR11)") {
+    val file = Path.of("/a/b").resolve("repository.json")
+    assertEquals(Store.tempPathFor(file), Path.of("/a/b").resolve("repository.json.tmp"))
+    val globalConfig = Path.of("/home/alice").resolve(".snapconfig.json")
+    assertEquals(
+      Store.tempPathFor(globalConfig),
+      Path.of("/home/alice").resolve(".snapconfig.json.tmp")
+    )
+  }
+
+  test(
+    "a repository write and a global config write staged in the same directory never collide " +
+      "(PR4/CR11): both survive with their own bytes"
+  ) {
+    val dir = tempDir()
+    val repoFile = dir.resolve(Store.RepositoryFileName)
+    val configFile = dir.resolve(Store.GlobalConfigFileName)
+    val alice = id("alice@example.com")
+    assertEquals(Store.writeRepository(repoFile, sample), Right(()))
+    assertEquals(Store.writeConfig(configFile, alice), Right(()))
+    assertEquals(Store.readRepository(repoFile).map(_.repository), Right(sample))
+    assertEquals(Store.readConfig(configFile), Right(Some(alice)))
+    assert(!Files.exists(Store.tempPathFor(repoFile)))
+    assert(!Files.exists(Store.tempPathFor(configFile)))
+    assertNotEquals(Store.tempPathFor(repoFile), Store.tempPathFor(configFile))
+  }
+
   test("repeated writes are byte-identical (determinism)") {
     val dir = tempDir()
     val one = dir.resolve("one.json")
@@ -135,6 +162,23 @@ class StoreSuite extends FunSuite:
     Files.write(file, Array[Byte](0x7b, -1, -2, 0x7d))
     assertEquals(Store.readRepository(file), Left(SnapError.RepositoryNotUtf8))
     assert(Store.readRepository(file).left.exists(_.message.contains("invalid JSON")))
+  }
+
+  test(
+    "a raw NUL is valid UTF-8 and falls through to jawn's own positioned diagnostic, not " +
+      "`RepositoryNotUtf8` (CR-NUL)"
+  ) {
+    val file = tempDir().resolve("repository.json")
+    // NUL where a JSON value is expected — valid UTF-8 (0x00 is a one-byte code point), so the
+    // pre-parse gate must let it through; the JSON grammar itself then rejects it, positioned.
+    Files.write(file, Array[Byte]('{', 0x00, '}'))
+    val result = Store.readRepository(file)
+    assert(result.left.exists(_.message.contains("invalid JSON")), result)
+    assert(
+      result.left.exists(e => e.message.contains("line") && e.message.contains("column")),
+      result
+    )
+    assert(!result.left.exists(_.message.contains("not valid UTF-8")), result)
   }
 
   test("read rejects a schema-valid but structurally invalid history (test 23's unreachable)") {

@@ -104,6 +104,17 @@ class CommandsConfigSuite extends FunSuite:
     assert(fx.stderr.startsWith("snap: "), fx.stderr)
   }
 
+  test("--global with HOME=\"\" is the same GlobalConfigUnavailable error as no HOME (D24/CR2)") {
+    val cwd = tempDir()
+    val fx = TestEnv(cwd = cwd, envMap = Map("HOME" -> ""))
+    val exit = Cli.run(fx.env, List("config", "--global", "contributor.id", "a@x"))
+    assertEquals(exit, 1)
+    assertEquals(fx.stdout, "")
+    assertEquals(fx.stderr, "snap: global configuration is unavailable: HOME is not set\n")
+    // Never silently resolves against cwd: no `.snapconfig.json` is created anywhere under it.
+    assert(!Files.exists(cwd.resolve(Store.GlobalConfigFileName)))
+  }
+
   test("--global contributor.id with a missing id operand is a grammar error") {
     val fx = TestEnv(cwd = repo())
     val exit = Cli.run(fx.env, List("config", "--global", "contributor.id"))

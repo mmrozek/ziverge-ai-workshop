@@ -3,6 +3,7 @@ package snap.cli
 import snap.core.SnapError
 
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 
 /** The recognized command surface (SPEC §7). One case per command; `--serve` and `--version` are
@@ -150,12 +151,13 @@ object Cli:
   /** Repository discovery (R77): walk from `cwd` to the filesystem root looking for a `.snap`
     * directory. Stops (fails) once `getParent` is exhausted — the filesystem root's parent is
     * `null`, wrapped by `Option` rather than compared directly (no `null` literal, DisableSyntax
-    * `noNulls`).
+    * `noNulls`). `.snap` must be a real directory — checked with `NOFOLLOW_LINKS` (D25) — so a
+    * symlinked `.snap` is walked past rather than treated as a repository root.
     */
   private[cli] def discoverRepo(env: Env): Either[SnapError, Path] =
     @annotation.tailrec
     def loop(dir: Path): Either[SnapError, Path] =
-      if Files.isDirectory(dir.resolve(".snap")) then Right(dir)
+      if Files.isDirectory(dir.resolve(".snap"), LinkOption.NOFOLLOW_LINKS) then Right(dir)
       else
         Option(dir.getParent) match
           case Some(parent) => loop(parent)

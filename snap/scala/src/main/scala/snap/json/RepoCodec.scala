@@ -33,6 +33,12 @@ object RepoCodec:
   private val PutChangeFields = Set("type", "path", "content")
   private val DeleteChangeFields = Set("type", "path")
 
+  /** Union of every variant's fields (CR9): a field name outside all three variants is unknown
+    * regardless of `type`, so it must be caught before `type` is even extracted — matching this
+    * module's own documented precedence ("unknown fields are detected... then values are decoded").
+    */
+  private val AllChangeFields = TextChangeFields ++ PutChangeFields ++ DeleteChangeFields
+
   // ---------------------------------------------------------------- decode
 
   def decode(json: Json): Either[SnapError, Repository] = json match
@@ -94,11 +100,15 @@ object RepoCodec:
       case _                  => Left(SnapError.FieldWrongType("patch", "changes"))
 
   /** R50: `text {path, edit}` / `put {path, content}` / `delete {path}` — the variant's exact field
-    * set, nothing else (test 23 anchors `unknown field: extra` at the change level).
+    * set, nothing else (test 23 anchors `unknown field: extra` at the change level). A field
+    * outside every variant is rejected before `type` is extracted (CR9): otherwise
+    * `{"path":"f","bogus":1}` (no `type` at all) would report the missing `type` field instead of
+    * the unknown `bogus` one, inverting this module's own "unknown fields first" precedence.
     */
   private def decodeChange(json: Json): Either[SnapError, Change] = json match
     case Json.JObject(fields) =>
       for
+        _ <- checkUnknown(fields, AllChangeFields, "change")
         kind <- requiredString(fields, "type", "change")
         change <- kind match
           case "text" =>

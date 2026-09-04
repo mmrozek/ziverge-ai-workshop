@@ -28,4 +28,6 @@ object Presentation:
       if text.nonEmpty then env.stdout.print(text)
 
     def error(env: Env, detail: String): Unit =
-      env.stderr.println(s"snap: $detail")
+      // Literal LF, not `println` (which appends the platform `line.separator`) — spec §10 requires
+      // LF line endings regardless of host/JVM (PR2/CR6).
+      env.stderr.print(s"snap: $detail\n")

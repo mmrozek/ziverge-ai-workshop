@@ -28,9 +28,14 @@ import scala.util.Using
   *   1. Every regular file's root-relative path must be a valid tracked path ([[SnapPath.parse]],
   *      R23) — segments are joined with `/` explicitly, never with the platform separator.
   *   1. Directories are implicit: they are recursed into but never tracked, so empty directories
-  *      are invisible (R19; test 25's premise). The root-level entry named `.snap` is excluded
-  *      entirely, whatever its kind — `.snap/` metadata is never part of the tracked tree (R16,
-  *      invariant 8); a *nested* `sub/.snap` IS tracked (D13).
+  *      are invisible (R19; test 25's premise). The root-level entry named `.snap` is excluded when
+  *      it is a real directory (`.snap/` metadata is never part of the tracked tree, R16, invariant
+  *      8) or a regular file (T10: a regular file cannot collide with metadata creation, so it is
+  *      excluded rather than tracked); a symlink or other non-directory, non-regular root-level
+  *      `.snap` is reported as an unsupported entry (rule 1 above) rather than silently skipped —
+  *      §2's MUST-report/MUST-NOT-follow wins over the metadata exclusion for anything that isn't
+  *      genuinely the metadata directory (D25). A *nested* `sub/.snap` IS tracked regardless of
+  *      kind (D13).
   *
   * Determinism: children of every directory are visited in `Utf8Order` of their names — never in
   * directory-listing order — so the walk order (and therefore which failure is reported when
@@ -71,15 +76,20 @@ object WorkTree:
         names.foldLeft[Either[SnapError, Vector[(String, Path)]]](Right(Vector.empty)) {
           (acc, name) =>
             acc.flatMap { out =>
-              if prefix.isEmpty && name == ".snap" then Right(out) // root-level metadata (R16)
-              else
-                val entry = dir.resolve(name)
-                val rel = if prefix.isEmpty then name else s"$prefix/$name"
-                classify(entry).flatMap {
-                  case Kind.Regular     => Right(out :+ (rel, entry))
-                  case Kind.Directory   => go(entry, rel).map(out ++ _)
-                  case Kind.Unsupported => Left(SnapError.UnsupportedWorkTreeEntry(rel))
-                }
+              val entry = dir.resolve(name)
+              val rel = if prefix.isEmpty then name else s"$prefix/$name"
+              val isRootSnap = prefix.isEmpty && name == ".snap"
+              classify(entry).flatMap {
+                // Root-level metadata: excluded whatever its kind, provided it IS the real
+                // directory or a regular file (T10) — never a symlink or other special entry, which
+                // falls through to the ordinary Unsupported case below and is reported (D25; §2's
+                // MUST-report/MUST-NOT-follow wins over the metadata exclusion).
+                case Kind.Directory if isRootSnap => Right(out) // root-level metadata dir (R16)
+                case Kind.Regular if isRootSnap   => Right(out) // regular file named .snap (T10)
+                case Kind.Regular                 => Right(out :+ (rel, entry))
+                case Kind.Directory               => go(entry, rel).map(out ++ _)
+                case Kind.Unsupported             => Left(SnapError.UnsupportedWorkTreeEntry(rel))
+              }
             }
         }
       }

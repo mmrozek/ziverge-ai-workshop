@@ -155,3 +155,25 @@ class CliSuite extends munit.FunSuite:
     val fx = TestEnv(cwd = nested)
     assertEquals(Cli.discoverRepo(fx.env), Right(root.toAbsolutePath.normalize()))
   }
+
+  test(
+    "Cli.discoverRepo walks past a symlinked .snap: it is not a real repository (D25)"
+  ) {
+    val root = tempDir()
+    val realDir = Files.createDirectory(tempDir().resolve("elsewhere"))
+    Files.createSymbolicLink(root.resolve(".snap"), realDir)
+    val fx = TestEnv(cwd = root)
+    assertEquals(Cli.discoverRepo(fx.env), Left(snap.core.SnapError.NotASnapRepository))
+  }
+
+  test(
+    "Cli.discoverRepo prefers a real ancestor repository over a closer symlinked .snap (D25)"
+  ) {
+    val root = tempDir()
+    Files.createDirectory(root.resolve(".snap"))
+    val nested = Files.createDirectories(root.resolve("x"))
+    val realDir = Files.createDirectory(tempDir().resolve("elsewhere"))
+    Files.createSymbolicLink(nested.resolve(".snap"), realDir)
+    val fx = TestEnv(cwd = nested)
+    assertEquals(Cli.discoverRepo(fx.env), Right(root.toAbsolutePath.normalize()))
+  }

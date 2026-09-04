@@ -64,6 +64,17 @@ class TextTokensSuite extends munit.ScalaCheckSuite:
     }
   }
 
+  // ------------------------------------------------------------ decodeUtf8 (CR-NUL)
+
+  test("decodeUtf8 accepts a raw NUL — unlike decode, which treats NUL as non-text (CR-NUL)") {
+    assertEquals(TextTokens.decodeUtf8(Array[Byte](0x61, 0x00, 0x62)), Some("a\u0000b"))
+    assertEquals(TextTokens.decode(Array[Byte](0x61, 0x00, 0x62)), None)
+  }
+
+  test("decodeUtf8 still rejects genuinely invalid UTF-8") {
+    assertEquals(TextTokens.decodeUtf8(Array[Byte](0x80.toByte)), None)
+  }
+
   test("canonical token sequence predicate") {
     assert(TextTokens.isCanonical(Vector.empty))
     assert(TextTokens.isCanonical(Vector("a\n", "b\n")))

@@ -19,6 +19,16 @@ object TextTokens:
   def decode(bytes: Array[Byte]): Option[String] =
     if isText(bytes) then Some(new String(bytes, StandardCharsets.UTF_8)) else None
 
+  /** Decodes bytes to a string iff they are valid UTF-8 — unlike [[decode]], a NUL byte does not
+    * disqualify them (CR-NUL). For the JSON parse boundary ([[snap.fs.Store]]'s repository/config
+    * reads), not file-content text detection: JSON's own grammar rejects a raw NUL with a
+    * positioned `invalid JSON` diagnostic, so this gate must reject only genuine UTF-8 encoding
+    * failures and let a NUL fall through to the parser rather than being pre-empted by a "not valid
+    * UTF-8" verdict.
+    */
+  def decodeUtf8(bytes: Array[Byte]): Option[String] =
+    if isValidUtf8(bytes) then Some(new String(bytes, StandardCharsets.UTF_8)) else None
+
   /** Splits immediately after every LF byte, retaining LF in the token (R53): `"a\r\nb"` →
     * `["a\r\n", "b"]`; the empty file has no tokens.
     */

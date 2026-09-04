@@ -22,7 +22,11 @@ lazy val root = (project in file("."))
       "-deprecation",
       "-feature",
       "-unchecked",
-      "-Wunused:all"
+      "-Wunused:all",
+      // PR8: warnings are promoted to errors so a missing case in the 60+-case `SnapError.message`
+      // match (or any other exhaustiveness gap) fails the build instead of shipping as a silent
+      // `MatchError` at runtime (phase-1 review verified zero warnings under this flag).
+      "-Werror"
     ),
     libraryDependencies ++= Seq(
       // Runtime (DESIGN D2): JSON tokenizer under our own AST.

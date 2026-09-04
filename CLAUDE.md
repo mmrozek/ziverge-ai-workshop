@@ -161,3 +161,13 @@ task loop doesn't stall.
 `ts/` bundled scaffold (read-only), **`scala/` our implementation (sbt)** ·
 `docs/plan/` SPEC-NOTES + DESIGN + PLAN · `tasks/` task files + `TASKS.md` board ·
 `reviews/` reviews · `.claude/` + `scripts/` workflow tooling.
+
+## Workflow trap — jar staleness vs test-only edits (phase-1 finding)
+
+`snap/run` (contract, read-only) rebuilds when ANY file under `snap/scala/src` —
+including `src/test` — is newer than the assembly jar, but `sbt assembly` never
+re-stamps the jar for test-only changes. Result: after editing only test files, every
+`./snap/verify` invocation silently pays a full sbt bootstrap per CLI call and
+long multi-step cases (e.g. test 23) blow their 30 s budget as a phantom "hang".
+**Rule: after any test-only edit, run `cd snap/scala && sbt -batch clean assembly`
+before `./snap/verify`.**

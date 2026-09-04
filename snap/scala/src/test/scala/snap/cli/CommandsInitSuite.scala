@@ -105,6 +105,29 @@ class CommandsInitSuite extends FunSuite:
     assert(!Files.exists(root.resolve("a")))
   }
 
+  test(
+    "init over a symlinked .snap target neither follows the link nor succeeds silently (D25)"
+  ) {
+    // `checkNotInsideRepository`'s NOFOLLOW_LINKS check (D25) does not see a repository here, so
+    // `init` proceeds by its normal rules — and then fails naturally when `Files.createDirectories`
+    // finds a non-directory entry already sitting at `.snap`: neither following the symlink into
+    // `realTarget` (least-surprising: a bare `.snap` symlink is not "reinitializing" a repository)
+    // nor silently succeeding without creating real metadata.
+    val root = tempDir()
+    val realTarget = tempDir().resolve("elsewhere")
+    Files.createDirectory(realTarget)
+    Files.createSymbolicLink(root.resolve(".snap"), realTarget)
+    val fx = TestEnv(cwd = root)
+    val exit = Cli.run(fx.env, List("init"))
+    assertEquals(exit, 1)
+    assertEquals(fx.stdout, "")
+    assert(fx.stderr.startsWith("snap: cannot create directory:"), fx.stderr)
+    // Never followed: no repository.json ever lands inside the symlink's real target.
+    assert(!Files.exists(realTarget.resolve("repository.json")))
+    // The symlink itself is untouched — still a symlink, not replaced by a real directory.
+    assert(Files.isSymbolicLink(root.resolve(".snap")))
+  }
+
   test("more than one operand is a grammar error") {
     val fx = TestEnv(cwd = tempDir())
     val exit = Cli.run(fx.env, List("init", "a", "b"))
