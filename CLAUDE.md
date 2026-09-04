@@ -55,7 +55,12 @@ spec+tests arrive → spec analysis (SPEC-NOTES.md) → DESIGN.md + PLAN.md → 
 Phases are vertical slices: each one is named by the provided tests it turns green.
 
 **Verification commands** (from repo root): full suite `./snap/verify --lang scala`
-(builds the Scala workspace first); the harness itself is checked with
+(builds the Scala workspace first). **JDK note (T10 finding):** the harness passes
+through only `PATH` (drops `JAVA_HOME`); the machine-default JDK 24 prints a
+`sun.misc.Unsafe` warning on startup that breaks every `stderr_equals ""` assertion —
+always run with Java 17 first on PATH:
+`PATH="$HOME/.sdkman/candidates/java/current/bin:$PATH" ./snap/verify --lang scala`.
+The harness itself is checked with
 `cd snap/test-harness && npm run check && npm test` (only relevant if the user changes
 it — we never do). Manual runs: `./snap/run --lang scala <command…>`.
 
@@ -88,15 +93,18 @@ it — we never do). Manual runs: `./snap/run --lang scala <command…>`.
 ## Model policy
 
 Match model cost to task criticality when spawning agents (Agent tool `model` param
-overrides agent frontmatter):
+overrides agent frontmatter). Revised by the user 2026-09-04 ("keep only risky tasks
+as fable"):
 
-- **Strong model (inherit — the session model):** spec analysis, DESIGN/PLAN authoring,
-  phase reviews, the post-completion audit, and tasks touching clock compare/merge or
-  tie-break logic.
-- **Cheaper/faster (sonnet; haiku for pure scans):** 1–2 SP mechanical tasks
-  (boilerplate, wiring, CLI plumbing, doc updates), Explore-style searches, and status
-  chores. When unsure, err toward the stronger model — a bad merge bug costs more than
-  the tokens saved.
+- **Fable (explicit `model: "fable"`):** ONLY Risk-core tasks (clock compare / merge /
+  tie-break logic) — their implementers AND their pre-commit task reviewers.
+- **Opus:** phase reviews, the post-completion audit, spec analysis / plan authoring if
+  redone.
+- **Sonnet:** all normal-risk implementers (any SP), integration verification runs.
+- **Haiku:** pure scans/greps.
+- The orchestrator session itself runs on a faster model (user switches via `/model`);
+  since spawns now always pass an explicit `model`, the session model never leaks into
+  subagent tiering.
 
 ## Mechanical guards (`.claude/settings.json`)
 
