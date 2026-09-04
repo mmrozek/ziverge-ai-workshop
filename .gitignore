@@ -1,0 +1,28 @@
+# OS
+.DS_Store
+
+# Editors
+.idea/
+.vscode/
+*.iml
+
+# Machine-/session-local tooling state
+.mcp.json
+.metals/
+.bloop/
+.bsp/
+tasks/CURRENT.md
+tasks/AGENTS-STATUS.md
+
+# Common build/dependency artifacts
+node_modules/
+dist/
+build/
+target/
+__pycache__/
+*.pyc
+.venv/
+venv/
+coverage/
+.coverage
+*.log

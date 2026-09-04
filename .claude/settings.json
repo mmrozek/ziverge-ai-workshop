@@ -1,0 +1,48 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(snap/SPEC.md)",
+      "Write(snap/SPEC.md)",
+      "Edit(snap/tests/**)",
+      "Write(snap/tests/**)",
+      "Edit(snap/TEST-HARNESS.md)",
+      "Write(snap/TEST-HARNESS.md)",
+      "Edit(snap/test-harness/**)",
+      "Write(snap/test-harness/**)",
+      "Edit(snap/ts/**)",
+      "Write(snap/ts/**)",
+      "Edit(snap/README.md)",
+      "Write(snap/README.md)",
+      "Edit(snap/AGENTS.md)",
+      "Write(snap/AGENTS.md)",
+      "Edit(snap/run)",
+      "Write(snap/run)",
+      "Edit(snap/run_tests)",
+      "Write(snap/run_tests)",
+      "Edit(snap/verify)",
+      "Write(snap/verify)"
+    ],
+    "ask": [
+      "Bash(git commit --amend:*)",
+      "Bash(git reset:*)",
+      "Bash(git rebase:*)",
+      "Bash(git clean:*)"
+    ],
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git stash:*)",
+      "Bash(git worktree:*)",
+      "Bash(git cherry-pick:*)",
+      "Bash(./snap/verify:*)",
+      "Bash(./snap/run_tests:*)",
+      "Bash(./snap/run:*)",
+      "Bash(sbt:*)"
+    ]
+  }
+}
