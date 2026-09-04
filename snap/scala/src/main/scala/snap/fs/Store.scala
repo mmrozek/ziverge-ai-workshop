@@ -41,10 +41,10 @@ object Store:
   private val TempFileName: String = "repository.json.tmp"
 
   /** Reads and fully loads a repository file: bytes → UTF-8 check → strict JSON parse → typed
-    * decode → structural validation (§4.5 steps 1–4). Steps 5–6 are T07's and consume the returned
-    * [[Repo.StructurallyValid]]. Performs no filesystem mutation (R103).
+    * decode → full validation (§4.5 steps 1–6, [[Repo.validateFully]] — T07). The returned
+    * [[Repo.Valid]] carries the materialized frontier tree. Performs no filesystem mutation (R103).
     */
-  def readRepository(file: Path): Either[SnapError, Repo.StructurallyValid] =
+  def readRepository(file: Path): Either[SnapError, Repo.Valid] =
     for
       bytes <- attempt(Files.readAllBytes(file))(readFailure)
       // A valid repository document is UTF-8 text without NUL; `TextTokens.decode`
@@ -52,7 +52,7 @@ object Store:
       text <- TextTokens.decode(bytes).toRight(SnapError.RepositoryNotUtf8)
       json <- JsonParser.parse(text)
       repository <- RepoCodec.decode(json)
-      valid <- Repo.validate(repository)
+      valid <- Repo.validateFully(repository)
     yield valid
 
   /** Serializes `repository` canonically (D7) and writes it atomically to `file`. */

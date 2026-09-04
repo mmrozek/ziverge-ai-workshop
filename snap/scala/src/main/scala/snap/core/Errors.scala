@@ -281,6 +281,44 @@ enum SnapError:
     */
   case GlobalConfigUnavailable
 
+  // --- T07 additions: replay + validation steps 5–6 (R25, R45, R51–R52, R60) ---
+
+  /** A syntactically valid version that is not known/materializable in the repository (R45): a
+    * selected patch does not exist, or a selected patch's base is not contained in the selection.
+    * Test 19 pins the full line `snap: unknown version: (a@x->2)`; test 14 the substring `unknown
+    * version`. Rendered here; the CLI (T11/T12) only prepends `snap: `.
+    */
+  case UnknownVersion(version: Version)
+
+  /** A delete change whose path is absent in the patch's exact base tree (R51; test 23 pins the
+    * full line `snap: delete of absent path: f`).
+    */
+  case DeleteOfAbsentPath(path: SnapPath)
+
+  /** A change that alters neither path existence nor bytes (R52; test 15 pins the substring `no-op
+    * change` — kept at the end of the rendered line). The empty-text-edit-creates-empty-file
+    * exception never reaches this case: creation always alters existence.
+    */
+  case NoOpChange(path: SnapPath)
+
+  /** A patch's authored result tree is not prefix-free (R25; test 15 pins the substring `tree paths
+    * conflict`). Carries the first path (in `Utf8Order`) that has a proper segment-prefix ancestor
+    * present in the authored result.
+    */
+  case TreePathsConflict(path: SnapPath)
+
+  /** A text edit over a present base path whose bytes are not text — invalid UTF-8 or a NUL byte,
+    * R53 — so there is no old token sequence to edit (test 27's shape-only `text over binary` case;
+    * untested wording).
+    */
+  case TextEditOverNonText(path: SnapPath)
+
+  /** T07 staging seam: [[Replay.LinearOnly]] met a genuinely concurrent case (SPEC §6.2 rules 2–4,
+    * §6.4 — T16's scope). Typed rather than silently wrong; removed when T16 lands the concurrent
+    * integration engine. Untested wording — no provided test exercises the gap by construction.
+    */
+  case ConcurrentHistoryUnsupported(dot: Dot)
+
   /** One-line diagnostic detail, without the `snap: ` prefix — the CLI layer (T08) prepends the
     * prefix when printing (spec §10 `snap: <detail>`).
     */
@@ -335,6 +373,13 @@ enum SnapError:
     case CannotWriteConfig(detail)              => Messages.cannotWriteConfig(detail)
     case ContributorIdRequired                  => Messages.contributorIdRequired
     case GlobalConfigUnavailable                => Messages.globalConfigUnavailable
+    // --- T07 additions ---
+    case UnknownVersion(version)           => Messages.unknownVersion(version)
+    case DeleteOfAbsentPath(path)          => Messages.deleteOfAbsentPath(path)
+    case NoOpChange(path)                  => Messages.noOpChange(path)
+    case TreePathsConflict(path)           => Messages.treePathsConflict(path)
+    case TextEditOverNonText(path)         => Messages.textEditOverNonText(path)
+    case ConcurrentHistoryUnsupported(dot) => Messages.concurrentHistoryUnsupported(dot)
 
 /** Message catalog (DESIGN D5): every diagnostic string of the implementation lives here,
   * test-pinned ones verbatim. No other module builds diagnostic text. Where a provided test anchors
@@ -536,3 +581,26 @@ object Messages:
     * `HOME`, unlike the read side where a missing `HOME` is simply "no value" (R99).
     */
   val globalConfigUnavailable: String = "global configuration is unavailable: HOME is not set"
+
+  // --- T07 additions: replay + validation steps 5–6 ---
+
+  /** Pinned full line `snap: unknown version: (a@x->2)` (test 19, R45); test 14 matches the
+    * substring `unknown version`.
+    */
+  def unknownVersion(version: Version): String = s"unknown version: ${version.canonicalText}"
+
+  /** Pinned full line `snap: delete of absent path: f` (test 23, R51). */
+  def deleteOfAbsentPath(path: SnapPath): String = s"delete of absent path: ${path.value}"
+
+  /** Pinned fragment `no-op change` (test 15, R52), kept at the exact end of the line. */
+  def noOpChange(path: SnapPath): String = s"change ${path.value} is a no-op change"
+
+  /** Pinned fragment `tree paths conflict` (test 15, R25), kept at the exact end of the line. */
+  def treePathsConflict(path: SnapPath): String = s"${path.value}: tree paths conflict"
+
+  /** Untested wording (R51/R53): a text edit needs a text base to tokenize. */
+  def textEditOverNonText(path: SnapPath): String = s"text edit over non-text path: ${path.value}"
+
+  /** Temporary T07 staging diagnostic (superseded by T16's concurrent engine); untested wording. */
+  def concurrentHistoryUnsupported(dot: Dot): String =
+    s"concurrent integration is not implemented: ${dot.text}"

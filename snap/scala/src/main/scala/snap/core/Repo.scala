@@ -25,8 +25,9 @@ object Repository:
   *   - `patches` = exactly the causal closure of `frontier`, no unreachable patches (R44).
   *
   * Steps 5–6 (every change against its materialized exact base; deterministic replay of the
-  * frontier) are T07's: they consume the returned [[Repo.StructurallyValid]] proof value — the
-  * typed hook that makes skipping them impossible to overlook.
+  * frontier) live in [[Replay]] and consume the returned [[Repo.StructurallyValid]] proof value —
+  * the typed hook that makes skipping them impossible to overlook. [[Repo.validateFully]] composes
+  * all six steps and is what the read pipeline ([[snap.fs.Store]]) calls.
   *
   * Pure: no filesystem access, no mutation (R103); iteration only over the file-ordered patch
   * vector and canonically ordered version entries, so the reported error is a deterministic
@@ -42,6 +43,24 @@ object Repo:
       repository: Repository,
       results: Vector[Version]
   )
+
+  /** Proof that the full §4.5 pipeline (steps 1–6) passed: the structural proof plus the
+    * materialized frontier tree — step 6's output, the current tree every command reads.
+    */
+  final case class Valid(structure: StructurallyValid, tree: Tree):
+    def repository: Repository = structure.repository
+    def results: Vector[Version] = structure.results
+
+  /** §4.5 steps 1–6: structural validation ([[validate]]) followed by per-change base checks and
+    * the deterministic replay of the declared frontier ([[Replay.materialize]], steps 5–6). Runs
+    * with the [[Replay.LinearOnly]] integration strategy until T16 swaps in the concurrent engine —
+    * a genuinely concurrent (spec-valid) history is a typed error, never a silently wrong tree.
+    */
+  def validateFully(repository: Repository): Either[SnapError, Valid] =
+    for
+      structure <- validate(repository)
+      tree <- Replay.materialize(structure, repository.frontier, Replay.LinearOnly)
+    yield Valid(structure, tree)
 
   /** Runs steps 2–4 in a fixed order (sorting/dots → increments → contiguity → base closure →
     * frontier closure → reachability → acyclicity); the first violation decides.

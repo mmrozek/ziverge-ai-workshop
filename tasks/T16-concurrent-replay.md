@@ -42,3 +42,14 @@ tests in `snap/scala/src/test/scala/snap/core/`.
       paths (Utf8Order only).
 
 ## Notes / decisions
+
+## Pre-implementation pointers
+- `reviews/T07-review.md` nit 1: `Replay.materializeMemo`'s sub-replays CAN fail
+  (`CyclicHistory` on a non-self-contained base) — don't build on the infallibility
+  assumption the original comment made.
+- `reviews/T07-review.md` nit 2: consider private constructors for
+  `Repo.StructurallyValid`/`Repo.Valid` (unforgeable proofs, DESIGN §1.4) if feasible
+  without gutting test ergonomics; otherwise record why not.
+- T07's `Replay.Integration` trait is your seam: replace `Replay.LinearOnly`, delete
+  `SnapError.ConcurrentHistoryUnsupported`, widen results to carry warnings
+  (`(Tree, SortedSet[Warning])` per DESIGN §5).
