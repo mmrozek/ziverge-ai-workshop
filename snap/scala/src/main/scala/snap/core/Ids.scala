@@ -33,13 +33,13 @@ object Revision:
 
   def isValid(revision: Long): Boolean = revision >= 1L && revision <= Max
 
-  /** The reason wording deliberately contains "positive safe integer" — the diagnostic substring
-    * the provided suite pins (test 23); final message assembly belongs to the error catalog
-    * (T02/T06 integration).
+  /** The rendered message ends with the pinned fragment `positive safe integer` (test 23, R30); the
+    * wording lives in [[Messages.revisionNotSafeInteger]] (D5 — migrated from T03's
+    * `Either[String, A]` seam in T06).
     */
-  def check(revision: Long): Either[String, Long] =
+  def check(revision: Long): Either[SnapError, Long] =
     if isValid(revision) then Right(revision)
-    else Left("revision must be a positive safe integer")
+    else Left(SnapError.RevisionNotSafeInteger)
 
 /** A validated contributor id (SPEC §3.1, R28–R29): ASCII email-shaped — exactly one `@` with
   * nonempty text on both sides; no control character (0x00–0x1F and 0x7F, locked decision D12), no
@@ -59,16 +59,20 @@ object ContributorId:
   val ordering: Ordering[ContributorId] =
     Ordering.by((id: ContributorId) => id.value)(Utf8Order)
 
-  def parse(value: String): Either[String, ContributorId] =
+  /** Reasons are typed ([[IdError]]) and rendered only by [[Messages.contributorId]] (D5 — migrated
+    * from T03's `Either[String, A]` seam in T06).
+    */
+  def parse(value: String): Either[SnapError, ContributorId] =
     // `value.length` counts UTF-16 units and UTF-8 bytes-per-char is always
     // >= 1 per unit, so length > 254 implies bytes > 254 regardless of
     // content; after the ASCII check below, chars == bytes exactly.
-    if value.length > MaxBytes then Left(s"contributor id exceeds $MaxBytes bytes")
-    else if !value.forall(isAllowedChar) then Left("contributor id contains a forbidden character")
-    else if value.count(_ == '@') != 1 then Left("contributor id must contain exactly one '@'")
+    if value.length > MaxBytes then Left(SnapError.InvalidContributorId(IdError.TooLong))
+    else if !value.forall(isAllowedChar) then
+      Left(SnapError.InvalidContributorId(IdError.ForbiddenCharacter))
+    else if value.count(_ == '@') != 1 then Left(SnapError.InvalidContributorId(IdError.AtCount))
     else if value.head == '@' || value.last == '@' then
-      Left("contributor id must have nonempty text on both sides of '@'")
-    else if value.contains("->") then Left("contributor id must not contain '->'")
+      Left(SnapError.InvalidContributorId(IdError.EmptyAtSide))
+    else if value.contains("->") then Left(SnapError.InvalidContributorId(IdError.ArrowSubstring))
     else Right(new ContributorId(value))
 
   /** Printable ASCII 0x21–0x7E: excludes non-ASCII, the control range 0x00–0x1F, DEL 0x7F (D12),

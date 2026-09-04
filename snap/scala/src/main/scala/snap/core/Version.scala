@@ -23,7 +23,7 @@ final case class Version private (entries: Vector[(ContributorId, Long)]):
     * preserved). Rejects out-of-bounds revisions (R30) — the seam T06 builds the increment rule
     * (R46) on.
     */
-  def updated(id: ContributorId, revision: Long): Either[String, Version] =
+  def updated(id: ContributorId, revision: Long): Either[SnapError, Version] =
     Revision.check(revision).map { rev =>
       val idx = entries.indexWhere((e, _) => ContributorId.ordering.compare(e, id) >= 0)
       if idx < 0 then new Version(entries :+ (id -> rev))
@@ -127,20 +127,20 @@ object Version:
     * deterministic way to iterate a `Map` here) and rejects any out-of-bounds counter. Zero
     * counters are rejected rather than dropped so bugs cannot hide behind silent normalization.
     */
-  def fromMap(counters: Map[ContributorId, Long]): Either[String, Version] =
+  def fromMap(counters: Map[ContributorId, Long]): Either[SnapError, Version] =
     val sorted = counters.toVector.sortBy(_._1)(ContributorId.ordering)
     sorted.find((_, n) => !Revision.isValid(n)) match
-      case Some(_) => Left("revision must be a positive safe integer")
+      case Some(_) => Left(SnapError.RevisionNotSafeInteger)
       case None    => Right(new Version(sorted))
 
   /** Strict canonical parse (SPEC §3.2, R31): `()` or `(id->n,...)`. Duplicate ids, explicit
     * zeroes, leading zeroes, overflow, invalid ids, whitespace, and noncanonical ordering are all
-    * errors. The `Left` carries the reason; user-facing wording (`snap: invalid version: <arg>`)
-    * belongs to the CLI layer.
+    * errors. Reasons are typed ([[VersionError]] et al.) and rendered only by the [[Messages]]
+    * catalog; user-facing wording (`snap: invalid version: <arg>`) belongs to the CLI layer.
     */
-  def parse(text: String): Either[String, Version] =
+  def parse(text: String): Either[SnapError, Version] =
     if text.length < 2 || text.charAt(0) != '(' || text.charAt(text.length - 1) != ')' then
-      Left("version must be of the form () or (id->n,...)")
+      Left(SnapError.InvalidVersionValue(VersionError.Shape))
     else
       val body = text.substring(1, text.length - 1)
       if body.isEmpty then Right(empty)
@@ -148,10 +148,11 @@ object Version:
 
   /** Builds a version from decoded JSON `[id, revision]` pairs (SPEC §3.2, R32). The pairs must
     * already be in canonical order — noncanonical order, duplicates, invalid ids, and out-of-bounds
-    * revisions are errors (the "canonical" / "positive safe integer" reason substrings match the
-    * pinned diagnostics; final wording lands in the error catalog at integration).
+    * revisions are errors. The rendered `canonical` / `positive safe integer` fragments match the
+    * pinned diagnostics of test 23 (catalog entries [[Messages.versionValue]] /
+    * [[Messages.revisionNotSafeInteger]]).
     */
-  def fromPairs(pairs: Vector[(String, Long)]): Either[String, Version] =
+  def fromPairs(pairs: Vector[(String, Long)]): Either[SnapError, Version] =
     traverse(pairs) { (idText, rev) =>
       for
         id <- ContributorId.parse(idText)
@@ -159,24 +160,26 @@ object Version:
       yield (id, n)
     }.flatMap(fromCanonicalEntries)
 
-  private def parseEntry(entry: String): Either[String, (ContributorId, Long)] =
+  private def parseEntry(entry: String): Either[SnapError, (ContributorId, Long)] =
     // Ids cannot contain "->" and revisions are bare digits, so the first
     // "->" occurrence is an unambiguous separator (and print is its inverse).
     val sep = entry.indexOf("->")
-    if sep < 0 then Left("version entry is missing '->'")
+    if sep < 0 then Left(SnapError.InvalidVersionValue(VersionError.MissingArrow))
     else
       for
         id <- ContributorId.parse(entry.substring(0, sep))
         n <- parseRevisionText(entry.substring(sep + 2))
       yield (id, n)
 
-  private def parseRevisionText(text: String): Either[String, Long] =
-    if text.isEmpty then Left("revision is empty")
+  private def parseRevisionText(text: String): Either[SnapError, Long] =
+    if text.isEmpty then Left(SnapError.InvalidVersionValue(VersionError.EmptyRevision))
     else if !text.forall(c => c >= '0' && c <= '9') then
-      Left("revision must be a decimal integer") // covers whitespace, sign, garbage
-    else if text == "0" then Left("explicit zero revision")
-    else if text.charAt(0) == '0' then Left("leading zero in revision")
-    else if text.length > 16 then Left("revision must be a positive safe integer") // > Max digits
+      // covers whitespace, sign, garbage
+      Left(SnapError.InvalidVersionValue(VersionError.NonDecimalRevision))
+    else if text == "0" then Left(SnapError.InvalidVersionValue(VersionError.ExplicitZeroRevision))
+    else if text.charAt(0) == '0' then
+      Left(SnapError.InvalidVersionValue(VersionError.LeadingZeroRevision))
+    else if text.length > 16 then Left(SnapError.RevisionNotSafeInteger) // > Max digits
     else Revision.check(text.toLong) // <= 16 digits always fits a Long
 
   /** Shared canonicality gate for parsed entries: strictly ascending ids in `Utf8Order` — rejects
@@ -184,20 +187,21 @@ object Version:
     */
   private def fromCanonicalEntries(
       entries: Vector[(ContributorId, Long)]
-  ): Either[String, Version] =
+  ): Either[SnapError, Version] =
     val firstViolation = (1 until entries.length).iterator
       .flatMap { k =>
         val c = ContributorId.ordering.compare(entries(k - 1)._1, entries(k)._1)
-        if c == 0 then Some(s"duplicate contributor id: ${entries(k)._1.value}")
-        else if c > 0 then Some("contributor ids are not in canonical order")
+        if c == 0 then
+          Some(SnapError.InvalidVersionValue(VersionError.DuplicateId(entries(k)._1.value)))
+        else if c > 0 then Some(SnapError.InvalidVersionValue(VersionError.NonCanonicalOrder))
         else None
       }
       .nextOption()
     firstViolation.toLeft(new Version(entries))
 
   private def traverse[A, B](items: Vector[A])(
-      f: A => Either[String, B]
-  ): Either[String, Vector[B]] =
-    items.foldLeft[Either[String, Vector[B]]](Right(Vector.empty)) { (acc, item) =>
+      f: A => Either[SnapError, B]
+  ): Either[SnapError, Vector[B]] =
+    items.foldLeft[Either[SnapError, Vector[B]]](Right(Vector.empty)) { (acc, item) =>
       acc.flatMap(out => f(item).map(out :+ _))
     }

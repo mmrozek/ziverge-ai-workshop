@@ -121,13 +121,14 @@ class VersionTextSuite extends munit.FunSuite:
     assert(Version.fromPairs(Vector(("bad id", 1L))).isLeft) // invalid id
     assert(Version.fromPairs(Vector(("b@x", 1L), ("a@x", 1L))).isLeft) // order
     assert(Version.fromPairs(Vector(("a@x", 1L), ("a@x", 2L))).isLeft) // duplicate
-    // reason substrings pinned by the provided suite (test 23) for T06 reuse
+    // reason substrings pinned by the provided suite (test 23); rendered via the
+    // SnapError/Messages catalog since the T06 error-channel migration
     assertEquals(
-      Version.fromPairs(Vector(("a@x", 0L))).left.map(_.contains("positive safe integer")),
+      Version.fromPairs(Vector(("a@x", 0L))).left.map(_.message.contains("positive safe integer")),
       Left(true)
     )
     assertEquals(
-      Version.fromPairs(Vector(("b@x", 1L), ("a@x", 1L))).left.map(_.contains("canonical")),
+      Version.fromPairs(Vector(("b@x", 1L), ("a@x", 1L))).left.map(_.message.contains("canonical")),
       Left(true)
     )
   }

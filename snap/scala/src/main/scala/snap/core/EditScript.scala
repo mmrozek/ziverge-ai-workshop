@@ -11,36 +11,41 @@ enum EditOp:
   case Delete(count: Long)
   case Insert(tokens: Vector[String])
 
-/** Typed edit-script failures. Each `message` carries the exact fragment the provided suite pins
-  * (test 15 via `stderr_contains`, test 23 via regexes anchored at the line end) — later layers may
-  * prefix context but must never append after the fragment.
+/** Typed edit-script failures — pure reasons; the rendered text lives in [[Messages.editError]] (D5
+  * — migrated from T05's inline messages in T06). Each rendered message carries the exact fragment
+  * the provided suite pins (test 15 via `stderr_contains`, test 23 via regexes anchored at the line
+  * end) — later layers may prefix context but must never append after the fragment. The codec wraps
+  * these into [[SnapError.InvalidEdit]].
   */
-enum EditError(val message: String):
+enum EditError:
   /** R56 — the script ends before consuming the complete old token sequence (test 15). */
-  case Underconsumption extends EditError("edit does not consume old content")
+  case Underconsumption
 
   /** R56 — a retain/delete reaches past the end of the old token sequence (test 23). */
-  case Overconsumption extends EditError("edit consumes beyond old content")
+  case Overconsumption
 
   /** R55 — adjacent operations of one kind; `kind` is `retain`/`delete`/`insert` (test 15). */
-  case Adjacent(kind: String) extends EditError(s"edit has adjacent $kind operations")
+  case Adjacent(kind: String)
 
   /** R54 — an `insert` with an empty token array (test 23). */
-  case EmptyInsert extends EditError("edit insert is empty")
+  case EmptyInsert
 
   /** R54 — an insert token that is not a nonempty text token (untested message, D5). */
-  case BadInsertToken extends EditError("edit insert token is not a text token")
+  case BadInsertToken
 
   /** R54 — a count outside `1 .. 2^53−1` (test 23). */
-  case BadCount extends EditError("edit count is not a positive safe integer")
+  case BadCount
 
   /** R54 — an edit-operation object without exactly one key. Unrepresentable in [[EditOp]]; exposed
     * for the JSON codec layer, which owns the check (test 23).
     */
-  case NotOneOperation extends EditError("edit operation must have one operation")
+  case NotOneOperation
 
   /** R57 — the applied result is not a canonical token sequence (untested message, D5). */
-  case NonCanonicalResult extends EditError("edit result is not a canonical token sequence")
+  case NonCanonicalResult
+
+  /** Rendered one-line reason; text lives only in the [[Messages]] catalog (D5). */
+  def message: String = Messages.editError(this)
 
 /** An edit script (SPEC §4.4): the ordered operations transforming one canonical token sequence
   * into another. Structural rules (R54–R55) live in [[validate]]; application rules (R56–R57) in
