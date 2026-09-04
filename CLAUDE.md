@@ -35,7 +35,11 @@ This file defines **how** work happens here; `README.md` describes the layout.
    `reviews/phase-N-review.md` → every finding triaged (accept/defer/reject, recorded in
    the report) → accepted fixes committed → user shown the review summary. The next
    phase then starts **automatically** — the user interrupts if something bothers them
-   (their call, 2026-09-04). The only hard user-approval gate is the initial plan.
+   (their call, 2026-09-04). **Phases pipeline** (user, 2026-09-04): a later phase's
+   implementation may start while an earlier phase's review is still running, provided
+   task dependencies are met — but a phase only *closes* once its review findings are
+   triaged and accepted fixes are committed; conflicting review fixes take precedence
+   over in-flight work. The only hard user-approval gate is the initial plan.
 7. **Everything is tracked.** Plans, task files, reviews, agent/skill definitions — all
    committed to this repo. Don't keep state only in conversation.
 

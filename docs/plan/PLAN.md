@@ -239,3 +239,8 @@ task that implements them (holdout assumption — implemented and unit-tested, n
   **jawn-parser** (Typelevel, Scala) — its custom-Facade design hands over raw number
   text and per-key callbacks natively, a strictly better fit. Scala-first recorded as
   the standing rule in D2, with the JDK-HTTP/hand-rolled-CLI exceptions justified.
+- 2026-09-04 — user directive: **phases pipeline.** Later-phase tasks with satisfied
+  dependencies may run in parallel with an earlier phase's review (phase 3's T15
+  started alongside the phase-1 endgame; phase 2 starts right after T10). Review gates
+  unchanged: each phase closes only after its findings are triaged and fixes committed.
+  CLAUDE.md ground rule 6 and the task-loop phase boundary amended accordingly.

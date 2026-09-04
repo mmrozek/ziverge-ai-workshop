@@ -55,8 +55,10 @@ Precondition: `docs/plan/PLAN.md` is approved. If it isn't, stop and use `projec
 
 When the last task of a phase is done, switch to the `phase-review` skill; the
 **reviewer** runs the full provided suite and the lint gate as part of the phase review
-(its procedure step 2) — the orchestrator doesn't. Do not start the next phase's tasks
-before the review gate clears.
+(its procedure step 2) — the orchestrator doesn't. Later-phase tasks whose dependencies
+are met MAY run in parallel with the review (user, 2026-09-04) — but the phase closes
+only when its findings are triaged and accepted fixes committed (`review(phase-N):`),
+and those fixes take precedence over in-flight work when they conflict.
 
 ## Reporting
 
