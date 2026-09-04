@@ -151,6 +151,11 @@ task loop doesn't stall.
   suite at each phase gate. Never weaken, skip, or special-case a provided test.
 - **Lint gate:** `sbt scalafmtCheckAll` and `sbt "scalafixAll --check"` pass on every
   task commit and at every phase gate (configs and rules: `docs/SCALA-CONVENTIONS.md`).
+- **Slow suites are phase-gate only** (user, 2026-09-04): expensive probes — deep-history
+  stack-safety, large-scale performance — are named `*SlowSuite` and excluded from the
+  `test` task (`Test / testOptions += Tests.Filter`); run them with `sbt slowTest` at the
+  phase gate, not on every task. A task runs a slow suite only if it directly touches
+  what that suite probes. Rationale: per-task verification has to stay fast.
 - **Assume holdout evaluation** (user, 2026-09-04): the provided suite is a sample of
   the contract, not its edge. Implement the full spec text even where no provided test
   exercises it; the post-completion audit is a hard gate, not a formality.
