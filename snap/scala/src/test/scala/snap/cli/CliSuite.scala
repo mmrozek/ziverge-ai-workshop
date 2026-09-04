@@ -67,23 +67,11 @@ class CliSuite extends munit.FunSuite:
     assertEquals(fx.stderr, "snap: not a Snap repository\n")
   }
 
-  test("known-but-unimplemented commands print 'not implemented' once a repo is found") {
-    // T10 removed status/log/commit/diff from this list (real handlers now); T12 removed
-    // revert; T17 removed merge (real handler now); only `--serve` is left, and it goes when
-    // T19 lands. T13 gave `--serve` real grammar (SPEC §7.9, Grammar), but that rule is
-    // arity-only (at most one operand) — a bare `--serve` passes it, defaults to port 8765
-    // (D9), and is what reaches the stub below. An invalid port *value* is not a grammar error
-    // at all: it's caught afterward by `CommandsServe`'s own value check, which fails before the
-    // stub with `invalid port: <arg>` instead (unit-pinned in `CommandsServeSuite`, not here).
-    val root = tempDir()
-    Files.createDirectory(root.resolve(".snap"))
-    for args <- List(List("--serve")) do
-      val fx = TestEnv(cwd = root)
-      val exit = Cli.run(fx.env, args)
-      assertEquals(exit, 1, s"command $args")
-      assertEquals(fx.stdout, "", s"command $args")
-      assertEquals(fx.stderr, "snap: not implemented\n", s"command $args")
-  }
+  // The "known-but-unimplemented commands" table that lived here is gone: T10 took
+  // status/log/commit/diff, T12 revert, T17 merge and T19 `--serve`, so every command now has a
+  // real handler and the table had no subjects left. The two `not implemented` seams that do
+  // remain are remote-operand ones, pinned where they live: `diff … --repo` in
+  // [[CommandsDiffSuite]] and `merge http://…` in [[CommandsMergeSuite]]. Both go in T20.
 
   test("init never requires a pre-existing repository (it creates one instead, T09)") {
     // A nonexistent-until-now cwd would fail discovery with "not a Snap repository" if init

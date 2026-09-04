@@ -398,6 +398,16 @@ enum SnapError:
     */
   case InvalidPort(raw: String)
 
+  // --- T19 additions: `--serve` HTTP server (SPEC §7.9/§9) ---
+
+  /** Binding the HTTP server's listening socket failed (e.g. the requested port is already in use).
+    * Not spec-pinned wording — SPEC §7.9 doesn't name this failure mode — but every other effect
+    * boundary in this codebase converts a thrown I/O failure to a typed case rather than letting it
+    * surface as R107's generic "internal error" exit 2 (D4); `detail` is the underlying exception's
+    * message.
+    */
+  case CannotBindServer(detail: String)
+
   /** One-line diagnostic detail, without the `snap: ` prefix — the CLI layer (T08) prepends the
     * prefix when printing (spec §10 `snap: <detail>`).
     */
@@ -475,6 +485,8 @@ enum SnapError:
     case CannotUpdateWorkingTree(detail) => Messages.cannotUpdateWorkingTree(detail)
     // --- T13 additions ---
     case InvalidPort(raw) => Messages.invalidPort(raw)
+    // --- T19 additions ---
+    case CannotBindServer(detail) => Messages.cannotBindServer(detail)
 
 /** Message catalog (DESIGN D5): every diagnostic string of the implementation lives here,
   * test-pinned ones verbatim. No other module builds diagnostic text. Where a provided test anchors
@@ -800,3 +812,10 @@ object Messages:
     */
   def autoResolved(warning: Warning): String =
     s"auto-resolved ${warning.path.value}: ${warning.reason.text}"
+
+  // --- T19 additions: `--serve` HTTP server (SPEC §7.9/§9) ---
+
+  /** Untested wording (network effect boundary, mirroring [[cannotCreateDirectory]] /
+    * [[cannotReadWorkTree]]).
+    */
+  def cannotBindServer(detail: String): String = s"cannot bind server: $detail"

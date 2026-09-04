@@ -76,18 +76,24 @@ object Cli:
     */
   private val versionOutput = "snap 1.0.0\n"
 
+  /** The "not implemented" placeholder every command started from before its owning task landed
+    * (T09 `init`/`config`, T10 `status`/`log`/`commit`, T11 `diff`, T12 `revert`, T17 `merge`, T19
+    * `--serve`). As of T19 every non-`Version` command below has a real handler, so no entry in
+    * [[defaultCommands]] resolves to this anymore — kept only as the seed value
+    * [[defaultCommands]]'s initial map-build immediately overwrites, so a future new command still
+    * has a one-line placeholder to start from without editing this val.
+    */
   private val stub: CommandHandler = (_, _, _) => Left(SnapError.NotImplemented)
 
-  /** Every non-`Version` command dispatches to the "not implemented" stub until its owning task
-    * lands (T09 `init`/`config`, T10 `status`/`log`/`commit`, T11 `diff`, T12 `revert`, T17
-    * `merge`, T19 `--serve`). `run`'s `commands` parameter defaults to this map; tests override
-    * individual entries (e.g. to simulate an unexpected exception for the exit-2 path) without
-    * touching `Cli`. T09 replaced the `Init`/`Config` entries with their real handlers; T10
-    * replaced `Status`/`Log`/`Commit` and gave `Diff` its scan-precedence seam ([[CommandsDiff]]);
-    * T11 completed `Diff`'s rendering and its `<old> <new> [--repo <repository>]` forms (remote
-    * `--repo` resolution stays [[SnapError.NotImplemented]] until T20/T21). T13 gave `--serve` its
-    * grammar-and-port-only handler ([[CommandsServe]]) — the server itself is still
-    * [[SnapError.NotImplemented]] until T19; `Merge` stays on the stub until T17.
+  /** Every non-`Version` command dispatches to its real handler; `run`'s `commands` parameter
+    * defaults to this map, and tests override individual entries (e.g. to simulate an unexpected
+    * exception for the exit-2 path) without touching `Cli`. History: T09 replaced the
+    * `Init`/`Config` entries with their real handlers; T10 replaced `Status`/`Log`/`Commit` and
+    * gave `Diff` its scan-precedence seam ([[CommandsDiff]]); T11 completed `Diff`'s rendering and
+    * its `<old> <new> [--repo <repository>]` forms (remote `--repo` resolution stays
+    * [[SnapError.NotImplemented]] until T20/T21); T13 gave `--serve` its grammar-and-port-only
+    * handler ([[CommandsServe]]); T17 replaced `Merge`'s stub with [[CommandsMerge.handler]]; T19
+    * completed `--serve` with the real HTTP server ([[snap.http.Server]]).
     */
   val defaultCommands: Map[Command, CommandHandler] =
     Command.values.iterator
