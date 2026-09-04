@@ -96,6 +96,39 @@ class CommandsCommitSuite extends munit.FunSuite:
     assertEquals(repoBytes(root), before)
   }
 
+  // T14 (R103, tests 15/23's own `keep.txt`/`local/keep` premise lifted into a project unit
+  // test): `commit`'s first step is `Commands.readRepository` (repository load+validate) — a
+  // corrupt on-disk repository must fail there, before the working-tree scan or ANY write, so
+  // every working file AND `repository.json` itself stay byte-for-byte exactly as they were.
+  test(
+    "a corrupt repository.json blocks commit before touching anything else " +
+      "(R103, tests 15/23's validation-before-mutation pattern)"
+  ) {
+    val root = initRepo("a@x")
+    // Working files present before the corrupt repository is ever read — commit must never
+    // reach the working-tree scan, so neither of these can move by even one byte.
+    write(root, "keep.txt", "working bytes stay untouched\n")
+    write(root, "nested/keep", "nested bytes stay untouched\n")
+    // Test 15's own duplicate-key fixture, verbatim.
+    val corrupt = """{"format":1,"format":1,"frontier":[],"patches":[]}"""
+    Files.write(
+      root.resolve(".snap").resolve("repository.json"),
+      corrupt.getBytes(StandardCharsets.UTF_8)
+    )
+    val beforeRepo = repoBytes(root)
+    val beforeKeep = Files.readAllBytes(root.resolve("keep.txt")).toVector
+    val beforeNested = Files.readAllBytes(root.resolve("nested/keep")).toVector
+
+    val (exit, out, err) = run(root, "commit", "should never be authored")
+
+    assertEquals(exit, 1)
+    assertEquals(out, "")
+    assert(err.contains("duplicate JSON key"), err)
+    assertEquals(repoBytes(root), beforeRepo)
+    assertEquals(Files.readAllBytes(root.resolve("keep.txt")).toVector, beforeKeep)
+    assertEquals(Files.readAllBytes(root.resolve("nested/keep")).toVector, beforeNested)
+  }
+
   test("committed repository bytes are independent of file creation order (determinism)") {
     def committed(names: List[String]): (String, Vector[Byte]) =
       val root = initRepo()
