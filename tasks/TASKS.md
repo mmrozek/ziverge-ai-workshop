@@ -18,13 +18,13 @@ the **only** place status lives.
 | T10 | 1 | Worktree scanner, status, commit, log | 3 | done | T07,T09 | 41a5caa |
 | T11 | 2 | diff command & rendering | 3 | done | T10 | 20f3896 |
 | T12 | 2 | Filesystem install & revert | 2 | done | T11 | 13168f9 |
-| T13 | 2 | CLI grammar matrix & port validation | 2 | in-progress | T12 | |
+| T13 | 2 | CLI grammar matrix & port validation | 2 | done | T12 | 333f4b1 |
 | T14 | 2 | Validation matrices & error catalog completion | 3 | done | T12 | 6daa92d |
 | T15 | 3 | OT transform | 3 | done | T05 | acfb222 |
 | T16 | 3 | Concurrent replay: namespace, path rules, warnings | 5 | done | T07,T15 | 071639e |
-| T17 | 3 | merge command | 3 | in-progress | T12,T16 | |
-| T18 | 3 | Convergence hardening & property suite | 2 | todo | T17 | |
-| T19 | 4 | --serve HTTP server | 3 | todo | T07,T13 | |
+| T17 | 3 | merge command | 3 | verifying | T12,T16 | |
+| T18 | 3 | Convergence hardening & property suite | 2 | in-progress | T17 | |
+| T19 | 4 | --serve HTTP server | 3 | in-progress | T07,T13 | |
 | T20 | 4 | HTTP client & remote operands | 2 | todo | T17,T19 | |
 | T21 | 4 | Cross-repo collision, failure precedence, portability | 2 | todo | T20 | |
 | T22 | 5 | Terminal renderer, SNAP_COLOR/NO_COLOR, TTY | 3 | todo | T13,T17,T19 | |
