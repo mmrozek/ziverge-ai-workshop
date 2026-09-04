@@ -23,8 +23,8 @@ the **only** place status lives.
 | T15 | 3 | OT transform | 3 | done | T05 | acfb222 |
 | T16 | 3 | Concurrent replay: namespace, path rules, warnings | 5 | done | T07,T15 | 071639e |
 | T17 | 3 | merge command | 3 | done | T12,T16 | 6cc2291 |
-| T18 | 3 | Convergence hardening & property suite | 2 | in-progress | T17 | |
-| T19 | 4 | --serve HTTP server | 3 | in-progress | T07,T13 | |
+| T18 | 3 | Convergence hardening & property suite | 2 | in-progress | T17 | 720f7e5 (1/2) |
+| T19 | 4 | --serve HTTP server | 3 | review | T07,T13 | |
 | T20 | 4 | HTTP client & remote operands | 2 | todo | T17,T19 | |
 | T21 | 4 | Cross-repo collision, failure precedence, portability | 2 | todo | T20 | |
 | T22 | 5 | Terminal renderer, SNAP_COLOR/NO_COLOR, TTY | 3 | todo | T13,T17,T19 | |
