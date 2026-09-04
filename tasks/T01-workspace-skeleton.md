@@ -30,6 +30,7 @@ prints `snap: not implemented` to stderr and exits 1. After this task,
       `docs/SCALA-CONVENTIONS.md` (DisableSyntax: noVars/noThrows/noNulls/noReturns/
       noWhileLoops, OrganizeImports, RemoveUnused with `-Wunused:all`).
 - [ ] munit + scalacheck available in test scope only (D3); `sbt test` runs the smoke
-      test; no runtime dependencies in the assembly (D2).
+      test; runtime dependencies in the assembly are exactly those listed in DESIGN D2
+      (jackson-core), nothing else.
 
 ## Notes / decisions
