@@ -17,11 +17,11 @@ the **only** place status lives.
 | T09 | 1 | init + config | 2 | done | T06,T08 | 0fc896d |
 | T10 | 1 | Worktree scanner, status, commit, log | 3 | done | T07,T09 | 41a5caa |
 | T11 | 2 | diff command & rendering | 3 | done | T10 | 20f3896 |
-| T12 | 2 | Filesystem install & revert | 2 | in-progress | T11 | |
+| T12 | 2 | Filesystem install & revert | 2 | review | T11 | |
 | T13 | 2 | CLI grammar matrix & port validation | 2 | todo | T12 | |
 | T14 | 2 | Validation matrices & error catalog completion | 3 | todo | T12 | |
 | T15 | 3 | OT transform | 3 | done | T05 | acfb222 |
-| T16 | 3 | Concurrent replay: namespace, path rules, warnings | 5 | review | T07,T15 | |
+| T16 | 3 | Concurrent replay: namespace, path rules, warnings | 5 | done | T07,T15 | 071639e |
 | T17 | 3 | merge command | 3 | todo | T12,T16 | |
 | T18 | 3 | Convergence hardening & property suite | 2 | todo | T17 | |
 | T19 | 4 | --serve HTTP server | 3 | todo | T07,T13 | |
