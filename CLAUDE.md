@@ -93,20 +93,20 @@ it — we never do). Manual runs: `./snap/run --lang scala <command…>`.
 ## Model policy
 
 Match model cost to task criticality when spawning agents (Agent tool `model` param
-overrides agent frontmatter). Revised by the user 2026-09-04 ("keep only risky tasks
-as fable"):
+overrides agent frontmatter). Revised again by the user 2026-09-04 ("i dont want to
+use fable at all, i need to make things faster") — supersedes the earlier "keep only
+risky tasks as fable" revision:
 
-- **Fable (explicit `model: "fable"`):** ONLY Risk-core tasks (clock compare / merge /
-  tie-break logic) — their implementers AND their pre-commit task reviewers.
-- **Opus:** the post-completion audit only (final hard gate); spec analysis / plan
-  authoring if redone.
-- **Sonnet:** all normal-risk implementers (any SP), integration verification runs,
-  and **phase reviews from phase 2 onward** (user, 2026-09-04: "phase review is too
-  expensive" — phase 1's ran on opus before the change).
+- **Fable: never.** No task tier maps to it — not even Risk-core work.
+- **Sonnet (default):** everything — implementers of any risk/SP (including Risk-core),
+  pre-commit task reviewers, phase reviews, integration verification runs, spec
+  analysis / plan work.
+- **Opus:** only on an explicit per-task user request (candidate: the post-completion
+  audit — ask first).
 - **Haiku:** pure scans/greps.
-- The orchestrator session itself runs on a faster model (user switches via `/model`);
-  since spawns now always pass an explicit `model`, the session model never leaks into
-  subagent tiering.
+- The orchestrator session itself runs on a faster model (user switches via `/model` —
+  Sonnet unless they say otherwise); since spawns always pass an explicit `model`, the
+  session model never leaks into subagent tiering.
 
 ## Mechanical guards (`.claude/settings.json`)
 
