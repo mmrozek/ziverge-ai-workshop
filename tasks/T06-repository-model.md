@@ -42,3 +42,5 @@ temp-file write (R105, gotcha 10) using the canonical writer. DESIGN §6, §7.
   migrate T03's `Either[String, A]` reason-phrase seams into `SnapError`/`Messages`
   (finding 1); wire the R32 AST codec onto `Version.toPairs`/`fromPairs` (finding 3);
   route every JSON-decoded path through `SnapPath.parse` (finding 2 guard).
+  Additionally (T05 review finding 3): migrate `EditScript`'s task-local `EditError`
+  messages into the `SnapError`/`Messages` catalog alongside T03's seams.

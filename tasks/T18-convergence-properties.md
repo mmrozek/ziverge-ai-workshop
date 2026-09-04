@@ -32,3 +32,8 @@ byte-identical across repeated runs. Fix whatever divergence the matrix tests ex
 - [ ] Phase-3 gate: full suite shows 22 tests green (all except 12, 13, 16, 20, 26, 28).
 
 ## Notes / decisions
+
+## Pre-implementation pointers
+- From `reviews/T05-review.md` finding 1: add the script-shape golden pinning
+  equality-before-tie on trailing repeated lines — `diff([a\n,a\n],[a\n])` must be
+  exactly `[retain 1, delete 1]` (guards R64 against any future diff refactor).
