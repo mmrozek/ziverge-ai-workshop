@@ -4,6 +4,7 @@ import org.scalacheck.Gen
 import org.scalacheck.Prop.forAll
 
 import java.nio.charset.StandardCharsets
+import scala.collection.immutable.SortedSet
 
 /** Property tests for deterministic replay over generated linear histories (R66, R76 in T07's
   * linear scope; determinism obligations, CLAUDE.md / R109): materialization is a function of the
@@ -11,6 +12,8 @@ import java.nio.charset.StandardCharsets
   * byte-identical across repeated runs — and matches an independently tracked expected tree.
   */
 class ReplayLawsSuite extends munit.ScalaCheckSuite:
+
+  private val noWarnings: SortedSet[Warning] = SortedSet.empty
 
   private def id(raw: String): ContributorId =
     ContributorId.parse(raw).fold(e => fail(s"bad id $raw: ${e.message}"), identity)
@@ -127,7 +130,8 @@ class ReplayLawsSuite extends munit.ScalaCheckSuite:
   property("a generated linear history materializes to the independently tracked tree") {
     forAll(genHistory) { case (patches, frontier, expected) =>
       val valid = structurallyValid(frontier, sortedForValidate(patches))
-      assertEquals(Replay.materialize(valid, frontier, Replay.LinearOnly), Right(expected))
+      // A linear history has nothing to auto-resolve: the warning set is empty (R74).
+      assertEquals(Replay.materialize(valid, frontier), Right((expected, noWarnings)))
     }
   }
 
@@ -138,10 +142,10 @@ class ReplayLawsSuite extends munit.ScalaCheckSuite:
       // Steps 1–4 enforce file sorting, so the permuted history is hand-assembled: replay itself
       // must never read input order (the ready-loop reduces by a total order).
       val permuted = handBuilt(frontier, perm.map(patches))
-      assertEquals(Replay.materialize(permuted, frontier, Replay.LinearOnly), Right(expected))
+      assertEquals(Replay.materialize(permuted, frontier), Right((expected, noWarnings)))
       assertEquals(
-        Replay.integrationOrder(permuted, frontier, Replay.LinearOnly),
-        Replay.integrationOrder(handBuilt(frontier, patches), frontier, Replay.LinearOnly)
+        Replay.integrationOrder(permuted, frontier),
+        Replay.integrationOrder(handBuilt(frontier, patches), frontier)
       )
     }
   }
@@ -149,8 +153,8 @@ class ReplayLawsSuite extends munit.ScalaCheckSuite:
   property("repeated materialization of one history is byte-identical") {
     forAll(genHistory) { case (patches, frontier, _) =>
       val valid = structurallyValid(frontier, sortedForValidate(patches))
-      val first = Replay.materialize(valid, frontier, Replay.LinearOnly)
-      val second = Replay.materialize(valid, frontier, Replay.LinearOnly)
+      val first = Replay.materialize(valid, frontier)
+      val second = Replay.materialize(valid, frontier)
       assertEquals(first, second) // Tree equality is byte-content equality
     }
   }

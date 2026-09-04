@@ -3,12 +3,17 @@ package snap.core
 import munit.FunSuite
 
 import java.nio.charset.StandardCharsets
+import scala.collection.immutable.SortedSet
 
 /** Deterministic replay, directed tests (SPEC §4.5 steps 5–6, §6.1–§6.2; R45, R51–R52, R60,
-  * R65–R66, R69 rule 1). Fixtures lift the histories of provided tests 15/23/27; the property tests
-  * live in [[ReplayLawsSuite]].
+  * R65–R66). Fixtures lift the histories of provided tests 15/23/27; concurrent-integration
+  * directed tests live in [[ConcurrentReplaySuite]], the YAML merge fixtures in
+  * [[ConcurrentReplayFixturesSuite]], and the property tests in [[ReplayLawsSuite]] /
+  * [[ConcurrentReplayLawsSuite]].
   */
 class ReplaySuite extends FunSuite:
+
+  private val noWarnings: SortedSet[Warning] = SortedSet.empty
 
   private def id(raw: String): ContributorId =
     ContributorId.parse(raw).fold(e => fail(s"expected valid id '$raw': ${e.message}"), identity)
@@ -67,7 +72,7 @@ class ReplaySuite extends FunSuite:
     val valid = validated(v("a@x" -> 1L, "b@x" -> 1L), a1, b1)
     // result (b@x->1) precedes (a@x->1): at id a@x the counters are 0 vs 1.
     assertEquals(
-      Replay.integrationOrder(valid, v("a@x" -> 1L, "b@x" -> 1L), Replay.LinearOnly),
+      Replay.integrationOrder(valid, v("a@x" -> 1L, "b@x" -> 1L)),
       Right(Vector(Dot(id("b@x"), 1L), Dot(id("a@x"), 1L)))
     )
   }
@@ -79,7 +84,7 @@ class ReplaySuite extends FunSuite:
     val valid = validated(v("a@x" -> 2L, "b@x" -> 1L), a1, a2, b1)
     // a1 is the only initially ready patch; then (a->1,b->1) precedes (a->2) in snap order.
     assertEquals(
-      Replay.integrationOrder(valid, v("a@x" -> 2L, "b@x" -> 1L), Replay.LinearOnly),
+      Replay.integrationOrder(valid, v("a@x" -> 2L, "b@x" -> 1L)),
       Right(Vector(Dot(id("a@x"), 1L), Dot(id("b@x"), 1L), Dot(id("a@x"), 2L)))
     )
   }
@@ -135,8 +140,8 @@ class ReplaySuite extends FunSuite:
   test("a linear create/edit/delete history materializes to its final tree") {
     val (valid, frontier) = linearFixture
     assertEquals(
-      Replay.materialize(valid, frontier, Replay.LinearOnly),
-      Right(tree("f" -> "one\nthree\n", "g" -> "raw"))
+      Replay.materialize(valid, frontier),
+      Right((tree("f" -> "one\nthree\n", "g" -> "raw"), noWarnings))
     )
   }
 
@@ -144,26 +149,26 @@ class ReplaySuite extends FunSuite:
     val (valid, _) = linearFixture
     val bin = Tree.from(Vector((p("bin"), IArray[Byte](0, 1, 2))))
     assertEquals(
-      Replay.materialize(valid, v("a@x" -> 1L), Replay.LinearOnly),
-      Right(bin.updated(p("f"), utf8("one\ntwo\n")))
+      Replay.materialize(valid, v("a@x" -> 1L)),
+      Right((bin.updated(p("f"), utf8("one\ntwo\n")), noWarnings))
     )
     assertEquals(
-      Replay.materialize(valid, v("a@x" -> 2L), Replay.LinearOnly),
-      Right(bin.updated(p("f"), utf8("one\nthree\n")))
+      Replay.materialize(valid, v("a@x" -> 2L)),
+      Right((bin.updated(p("f"), utf8("one\nthree\n")), noWarnings))
     )
   }
 
   test("the empty version materializes to the empty tree") {
     val (valid, _) = linearFixture
-    assertEquals(Replay.materialize(valid, Version.empty, Replay.LinearOnly), Right(Tree.empty))
+    assertEquals(Replay.materialize(valid, Version.empty), Right((Tree.empty, noWarnings)))
   }
 
   test("an empty text edit creates an empty file (R52/R58)") {
     val a1 = patch("a@x", 1L, Version.empty, text("f"))
     val valid = validated(v("a@x" -> 1L), a1)
     assertEquals(
-      Replay.materialize(valid, v("a@x" -> 1L), Replay.LinearOnly),
-      Right(tree("f" -> ""))
+      Replay.materialize(valid, v("a@x" -> 1L)),
+      Right((tree("f" -> ""), noWarnings))
     )
   }
 
@@ -173,15 +178,16 @@ class ReplaySuite extends FunSuite:
     val frontier = v("a@x" -> 1L, "b@x" -> 1L)
     val valid = validated(frontier, a1, b1)
     assertEquals(
-      Replay.materialize(valid, frontier, Replay.LinearOnly),
-      Right(tree("x" -> "a\n", "y" -> "b\n"))
+      Replay.materialize(valid, frontier),
+      Right((tree("x" -> "a\n", "y" -> "b\n"), noWarnings))
     )
   }
 
-  test("validateFully composes steps 1–6 and returns the frontier tree") {
+  test("validateFully composes steps 1–6 and returns the frontier tree and warnings") {
     val (valid, frontier) = linearFixture
     val result = Repo.validateFully(valid.repository)
     assertEquals(result.map(_.tree), Right(tree("f" -> "one\nthree\n", "g" -> "raw")))
+    assertEquals(result.map(_.warnings), Right(noWarnings)) // linear history: nothing to resolve
     assertEquals(result.map(_.repository), Right(valid.repository))
     assertEquals(result.map(_.structure), Right(valid))
     assertEquals(result.map(_.results), Right(valid.results))
@@ -280,7 +286,7 @@ class ReplaySuite extends FunSuite:
     val a1 = patch("a@x", 1L, v("b@x" -> 1L), text("a", ins("a\n")))
     val b1 = patch("b@x", 1L, v("a@x" -> 1L), text("b", ins("b\n")))
     val valid = handBuilt(v("a@x" -> 1L, "b@x" -> 1L), Vector(a1, b1))
-    val result = Replay.materialize(valid, v("a@x" -> 1L, "b@x" -> 1L), Replay.LinearOnly)
+    val result = Replay.materialize(valid, v("a@x" -> 1L, "b@x" -> 1L))
     assertEquals(result, Left(SnapError.CyclicHistory))
     assertEquals(result.left.map(_.message), Left("cyclic or incomplete patch history"))
   }
@@ -292,7 +298,7 @@ class ReplaySuite extends FunSuite:
     val frontier = v("a@x" -> 1L, "b@x" -> 1L, "c@x" -> 1L)
     val valid = handBuilt(frontier, Vector(a1, b1, c1))
     assertEquals(
-      Replay.materialize(valid, frontier, Replay.LinearOnly),
+      Replay.materialize(valid, frontier),
       Left(SnapError.CyclicHistory)
     )
   }
@@ -341,40 +347,56 @@ class ReplaySuite extends FunSuite:
 
   test("materialize rejects unknown versions before replaying") {
     assertEquals(
-      Replay.materialize(knownFixture, v("b@x" -> 1L), Replay.LinearOnly),
+      Replay.materialize(knownFixture, v("b@x" -> 1L)),
       Left(SnapError.UnknownVersion(v("b@x" -> 1L)))
     )
   }
 
-  // --- the T16 seam: genuinely concurrent cases are typed errors, never wrong trees ---
+  // --- the former T16 seam: genuinely concurrent cases now resolve through the full engine
+  //     (the LinearOnly staging errors these asserted no longer exist; the exhaustive per-rule
+  //     coverage lives in ConcurrentReplaySuite) ---
 
-  test("concurrent changes to one path are a typed error under LinearOnly") {
+  test("concurrent creates of one path resolve to the canonically later create (R73 rule 4)") {
     val a1 = patch("a@x", 1L, Version.empty, text("f", ins("one\n")))
     val b1 = patch("b@x", 1L, Version.empty, text("f", ins("two\n")))
-    // b1 integrates first (snap order); a1 then sees f present in C but absent in B.
+    val frontier = v("a@x" -> 1L, "b@x" -> 1L)
+    val valid = validated(frontier, a1, b1)
+    // b1 integrates first (snap order); a1's later create wins over b1's.
     assertEquals(
-      rejects(v("a@x" -> 1L, "b@x" -> 1L), a1, b1),
-      SnapError.ConcurrentHistoryUnsupported(Dot(id("a@x"), 1L))
+      Replay.materialize(valid, frontier),
+      Right(
+        (tree("f" -> "one\n"), SortedSet(Warning(p("f"), WarningReason.LaterCreateWins)))
+      )
     )
   }
 
-  test("concurrent OT-shaped edits of one file are a typed error under LinearOnly") {
+  test("concurrent OT-shaped edits of one file merge through the aggregate context edit (R71)") {
     val a1 = patch("a@x", 1L, Version.empty, text("f", ins("x\n")))
     val a2 = patch("a@x", 2L, v("a@x" -> 1L), text("f", EditOp.Retain(1L), ins("a\n")))
     val b1 = patch("b@x", 1L, v("a@x" -> 1L), text("f", ins("b\n"), EditOp.Retain(1L)))
+    val frontier = v("a@x" -> 2L, "b@x" -> 1L)
+    val valid = validated(frontier, a1, a2, b1)
+    // Order a1, b1, a2 (snap order): a2 transforms through Q = diff("x\n", "b\nx\n") and lands
+    // its insertion after the retained base token; OT emits no warning (R74).
     assertEquals(
-      rejects(v("a@x" -> 2L, "b@x" -> 1L), a1, a2, b1),
-      SnapError.ConcurrentHistoryUnsupported(Dot(id("a@x"), 2L))
+      Replay.materialize(valid, frontier),
+      Right((tree("f" -> "b\nx\na\n"), noWarnings))
     )
   }
 
-  test("a concurrent namespace conflict never silently builds a non-prefix-free tree (R68)") {
+  test("a concurrent namespace conflict resolves to the later create, never a prefix clash (R68)") {
     val a1 = patch("a@x", 1L, Version.empty, put("a/b", "b"))
     val b1 = patch("b@x", 1L, Version.empty, put("a", "a"))
+    val frontier = v("a@x" -> 1L, "b@x" -> 1L)
+    val valid = validated(frontier, a1, b1)
+    // b1 first installs file `a`; a1's create of `a/b` wins the namespace, removing `a` — the
+    // warning names the REMOVED path (test 11's pin).
+    val result = Replay.materialize(valid, frontier)
     assertEquals(
-      rejects(v("a@x" -> 1L, "b@x" -> 1L), a1, b1),
-      SnapError.ConcurrentHistoryUnsupported(Dot(id("a@x"), 1L))
+      result,
+      Right((tree("a/b" -> "b"), SortedSet(Warning(p("a"), WarningReason.NamespaceWins))))
     )
+    assert(result.exists(_._1.isPrefixFree))
   }
 
   // --- determinism (repeated runs) ---
@@ -382,11 +404,11 @@ class ReplaySuite extends FunSuite:
   test("materialization is repeatable: the same inputs produce equal trees and orders") {
     val (valid, frontier) = linearFixture
     assertEquals(
-      Replay.materialize(valid, frontier, Replay.LinearOnly),
-      Replay.materialize(valid, frontier, Replay.LinearOnly)
+      Replay.materialize(valid, frontier),
+      Replay.materialize(valid, frontier)
     )
     assertEquals(
-      Replay.integrationOrder(valid, frontier, Replay.LinearOnly),
-      Replay.integrationOrder(valid, frontier, Replay.LinearOnly)
+      Replay.integrationOrder(valid, frontier),
+      Replay.integrationOrder(valid, frontier)
     )
   }

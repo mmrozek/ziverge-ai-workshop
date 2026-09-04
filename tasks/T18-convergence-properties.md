@@ -39,3 +39,17 @@ byte-identical across repeated runs. Fix whatever divergence the matrix tests ex
   exactly `[retain 1, delete 1]` (guards R64 against any future diff refactor).
 - From `reviews/T15-review.md` finding 2: directed OT test — P-insert row when Q's
   pending head is a delete (currently only probabilistically covered).
+- From `reviews/T16-review.md` nit 1 (deferred here at triage): directed regression test
+  for the sub-replay interposition shape — an unrelated same-path concurrent patch
+  interposing, in the outer ready order, between two patches that also compose a third
+  patch's declared base. The invariant to pin: warnings raised while materializing a
+  patch's base are **discarded** (they belong to the sub-context, R65), so the frontier's
+  warning set is unaffected by them. Without this test, a future edit that folds
+  `materializeMemo`'s warnings into the outer accumulator — a plausible "surely additive"
+  refactor — would pass every existing test while over-reporting in `merge`.
+- From `reviews/T16-review.md` nit 2 (deferred here at triage): replace the prose
+  generator-coverage claim in `ConcurrentReplayLawsSuite`'s scaladoc ("200 samples, 96
+  with warnings, all five reasons…") with an assertion, so the property suite cannot
+  silently go vacuous. The test should fail if generated histories stop being genuinely
+  concurrent or stop covering all five warning reasons. Delete the unverifiable comment
+  once the test exists.

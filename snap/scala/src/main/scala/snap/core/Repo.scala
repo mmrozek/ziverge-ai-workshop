@@ -1,6 +1,7 @@
 package snap.core
 
 import scala.annotation.tailrec
+import scala.collection.immutable.SortedSet
 
 /** The complete repository value (SPEC §4.1, R40): the declared frontier and the patch list in file
   * order. The `format` marker is not stored — the codec accepts only `1` and always writes `1`.
@@ -36,31 +37,43 @@ object Repository:
 object Repo:
 
   /** Proof that §4.5 steps 1–4 passed. `results(i)` is `patches(i)`'s result version (R46),
-    * precomputed so T07's replay (steps 5–6, ready-loop ordering by Snap order of results) never
+    * precomputed so the replay (steps 5–6, ready-loop ordering by Snap order of results) never
     * recomputes or re-validates it.
+    *
+    * The constructor is `private[core]` (T16, reviews/T07-review.md nit 2): outside `snap.core` the
+    * proof is unforgeable — [[validate]] is the only producer — while core-package tests keep
+    * building deliberately defective or permuted histories directly.
     */
-  final case class StructurallyValid(
+  final case class StructurallyValid private[core] (
       repository: Repository,
       results: Vector[Version]
   )
 
-  /** Proof that the full §4.5 pipeline (steps 1–6) passed: the structural proof plus the
-    * materialized frontier tree — step 6's output, the current tree every command reads.
+  /** Proof that the full §4.5 pipeline (steps 1–6) passed: the structural proof plus step 6's
+    * output — the materialized frontier tree (the current tree every command reads) and the
+    * replay's warning set (R74; the merge command's R75 set subtraction consumes it — T17).
+    *
+    * Constructor `private[core]` like [[StructurallyValid]]'s: [[validateFully]] is the only
+    * producer outside the core package.
     */
-  final case class Valid(structure: StructurallyValid, tree: Tree):
+  final case class Valid private[core] (
+      structure: StructurallyValid,
+      tree: Tree,
+      warnings: SortedSet[Warning]
+  ):
     def repository: Repository = structure.repository
     def results: Vector[Version] = structure.results
 
   /** §4.5 steps 1–6: structural validation ([[validate]]) followed by per-change base checks and
-    * the deterministic replay of the declared frontier ([[Replay.materialize]], steps 5–6). Runs
-    * with the [[Replay.LinearOnly]] integration strategy until T16 swaps in the concurrent engine —
-    * a genuinely concurrent (spec-valid) history is a typed error, never a silently wrong tree.
+    * the deterministic replay of the declared frontier ([[Replay.materialize]], steps 5–6) with the
+    * full concurrent integration engine (§6.2, T16).
     */
   def validateFully(repository: Repository): Either[SnapError, Valid] =
     for
       structure <- validate(repository)
-      tree <- Replay.materialize(structure, repository.frontier, Replay.LinearOnly)
-    yield Valid(structure, tree)
+      replayed <- Replay.materialize(structure, repository.frontier)
+      (tree, warnings) = replayed
+    yield Valid(structure, tree, warnings)
 
   /** Runs steps 2–4 in a fixed order — step 2 in full (sorting/dots → contiguity) before step 3
     * (increments → base closure), then frontier closure → reachability → acyclicity (PR3/CR8: a

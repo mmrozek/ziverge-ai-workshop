@@ -46,8 +46,9 @@ object Store:
   private val TempFileSuffix: String = ".tmp"
 
   /** Reads and fully loads a repository file: bytes → UTF-8 check → strict JSON parse → typed
-    * decode → full validation (§4.5 steps 1–6, [[Repo.validateFully]] — T07). The returned
-    * [[Repo.Valid]] carries the materialized frontier tree. Performs no filesystem mutation (R103).
+    * decode → full validation (§4.5 steps 1–6, [[Repo.validateFully]] — T07/T16). The returned
+    * [[Repo.Valid]] carries the materialized frontier tree and the replay's warning set (R74).
+    * Performs no filesystem mutation (R103).
     */
   def readRepository(file: Path): Either[SnapError, Repo.Valid] =
     for

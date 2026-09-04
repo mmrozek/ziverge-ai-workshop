@@ -4,6 +4,11 @@ ThisBuild / organization := "snap"
 ThisBuild / semanticdbEnabled := true
 ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
 
+// Suites named `*SlowSuite` (e.g. Θ(n²)-replay stack-safety depth probes, T16) are phase-gate
+// material, not per-task material: excluded from the default `test` task below, run explicitly
+// with `sbt slowTest`.
+addCommandAlias("slowTest", "testOnly *SlowSuite")
+
 lazy val root = (project in file("."))
   .settings(
     name := "snap",
@@ -36,5 +41,9 @@ lazy val root = (project in file("."))
       "org.scalameta" %% "munit-scalacheck" % "1.3.1" % Test,
       "org.scalacheck" %% "scalacheck" % "1.20.0" % Test
     ),
-    testFrameworks += new TestFramework("munit.Framework")
+    testFrameworks += new TestFramework("munit.Framework"),
+    // Keeps `*SlowSuite`s out of the default `test` task (see `slowTest` alias above) without also
+    // hiding them from `testOnly`/`slowTest`: scoped to the `test` task specifically rather than
+    // `Test / testOptions` (config-scoped), which `testOnly` shares and would filter too.
+    Test / test / testOptions += Tests.Filter(name => !name.endsWith("SlowSuite"))
   )

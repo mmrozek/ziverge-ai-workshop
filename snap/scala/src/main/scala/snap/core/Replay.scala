@@ -1,17 +1,66 @@
 package snap.core
 
 import java.nio.charset.StandardCharsets
+import scala.annotation.tailrec
+import scala.collection.immutable.SortedSet
 
-/** Deterministic replay (SPEC §6.1–§6.2; DESIGN §5, D14, D19): patch selection for a version and
-  * the known-version predicate (R45/R65), the ready-loop with all three ordering keys verbatim
-  * (R66), per-change validation against the materialized exact base tree (SPEC §4.5 steps 5–6,
-  * R51–R52, R25, R59–R60), and integration of one patch through the [[Integration]] seam — T07
-  * ships [[Replay.LinearOnly]] (R69 rule 1); T16 adds the concurrent engine behind the same seam.
+/** Why replay auto-resolved a conflict at a path (SPEC §6.2 R68, §6.4 R73). The rendered token is
+  * the exact spec vocabulary; the full `warning: auto-resolved <path>: <reason>` line belongs to
+  * the merge command's presentation (R75, T17).
+  */
+enum WarningReason:
+  /** §6.4 rules 2–3: a concurrent delete discards the other side's whole effect. */
+  case DeleteWins
+
+  /** §6.4 rule 4: the canonically later concurrent create of one path wins. */
+  case LaterCreateWins
+
+  /** §6.4 rule 5: the incoming atomic `put` replacement wins. */
+  case LaterPutWins
+
+  /** §6.2 namespace pre-pass (R68): the named path was removed because a concurrent patch installed
+    * a conflicting ancestor or descendant — the warning names the REMOVED path (test 11).
+    */
+  case NamespaceWins
+
+  /** §6.4 rule 6: incoming text over non-text current content — the current content wins. */
+  case PutWins
+
+  /** The spec's reason token, verbatim (§6.4's warning-pair grammar). */
+  def text: String = this match
+    case DeleteWins      => "delete-wins"
+    case LaterCreateWins => "later-create-wins"
+    case LaterPutWins    => "later-put-wins"
+    case NamespaceWins   => "namespace-wins"
+    case PutWins         => "put-wins"
+
+/** One auto-resolution warning pair (SPEC §6.4, R74): the affected path and the rule that decided.
+  * Replay returns the set of unique pairs; duplicates collapse by construction of the sorted set.
+  */
+final case class Warning(path: SnapPath, reason: WarningReason)
+
+object Warning:
+  /** R74: sorted by path, then reason — both in unsigned UTF-8 byte order (the reason through its
+    * rendered token, so the order is a property of the spec vocabulary, not of enum declaration
+    * order). Test 10 pins the resulting warning line order.
+    */
+  given ordering: Ordering[Warning] = new Ordering[Warning]:
+    def compare(a: Warning, b: Warning): Int =
+      val byPath = SnapPath.ordering.compare(a.path, b.path)
+      if byPath != 0 then byPath else Utf8Order.compare(a.reason.text, b.reason.text)
+
+/** Deterministic replay (SPEC §6; DESIGN §5, D14, D19): patch selection for a version and the
+  * known-version predicate (R45/R65), the ready-loop with all three ordering keys verbatim (R66),
+  * per-change validation against the materialized exact base tree (SPEC §4.5 steps 5–6, R51–R52,
+  * R25, R59–R60), and the full concurrent integration of one patch (§6.2 namespace pre-pass R68,
+  * per-path dispatch R69, path-level rules R73, OT through the aggregate context edit R71–R72),
+  * accumulating the warning set (R74).
   *
   * Pure: no I/O, no clock, no randomness. Every decision iterates sorted structures — the pending
   * set is reduced by an explicit total order ([[Replay.readyOrdering]]), trees iterate in
-  * `Utf8Order` by construction, and the memo map is only ever probed by key — so the result is a
-  * function of the patch set and version alone, never of input or processing order (R76).
+  * `Utf8Order` by construction, changes are path-sorted by construction, warnings live in a
+  * `SortedSet`, and the memo map is only ever probed by key — so the result is a function of the
+  * patch set and version alone, never of input or processing order (R76).
   */
 object Replay:
 
@@ -36,66 +85,6 @@ object Replay:
         if byAuthor != 0 then byAuthor
         else java.lang.Long.compare(a._2.revision, b._2.revision)
 
-  /** Integration of one patch into the canonical tree (SPEC §6.2) — the typed T16 extension point.
-    * T07 ships [[LinearOnly]]; T16 adds the full concurrent strategy (namespace pre-pass R68, rules
-    * 2–4 of R69, path rules R73, warning pairs R74) behind this same seam, widening the result to
-    * carry warnings.
-    */
-  trait Integration:
-    /** Integrates `patch` into `canonical`, given its materialized exact base tree `base` (R67) and
-      * its step-5-validated authored result tree `authored` (= `base` with every change applied).
-      */
-    def integrate(
-        patch: Patch,
-        base: Tree,
-        authored: Tree,
-        canonical: Tree
-    ): Either[SnapError, Tree]
-
-  /** R69 rule 1 only: when every path changed by the patch is identical in the base tree `B` and
-    * the canonical tree `C` (always true in linear histories) and the patch raises no namespace
-    * conflict (R68), the authored change applies directly — and the result provably equals the full
-    * engine's (no concurrent rule would have fired, and rule 1 emits no warning). Any genuinely
-    * concurrent case is the typed [[SnapError.ConcurrentHistoryUnsupported]] — never silent wrong
-    * behavior — until T16 replaces this strategy.
-    */
-  object LinearOnly extends Integration:
-    def integrate(
-        patch: Patch,
-        base: Tree,
-        authored: Tree,
-        canonical: Tree
-    ): Either[SnapError, Tree] =
-      // Rule 1 precondition, per changed path: identical presence and bytes in B and C.
-      val ruleOneHolds =
-        patch.changes.forall(ch => sameEntry(base.get(ch.path), canonical.get(ch.path)))
-      if !ruleOneHolds then Left(SnapError.ConcurrentHistoryUnsupported(patch.dot))
-      else if namespaceConflict(patch, authored, canonical) then
-        Left(SnapError.ConcurrentHistoryUnsupported(patch.dot))
-      else
-        // R70: all of the patch's path changes land together. `authored` presence at a changed
-        // path encodes the change's effect exactly: text/put leave it present, delete absent.
-        Right(patch.changes.foldLeft(canonical) { (tree, ch) =>
-          authored.get(ch.path) match
-            case Some(bytes) => tree.updated(ch.path, bytes)
-            case None        => tree.removed(ch.path)
-        })
-
-    /** R68 detection only (resolution is T16's): with `S` = the paths the patch makes present and
-      * `C'` = the canonical tree minus the patch's authored deletions, is there any `s ∈ S` with a
-      * (necessarily different) current ancestor or descendant in `C'`? In a truly linear history
-      * this never fires — such a conflict would already be a step-5 `tree paths conflict` in the
-      * authored result — so it only guards against silently building a non-prefix-free tree from
-      * concurrent creates (e.g. concurrent `a` and `a/b`).
-      */
-    private def namespaceConflict(patch: Patch, authored: Tree, canonical: Tree): Boolean =
-      val deletions = patch.changes.collect { case ch if !authored.contains(ch.path) => ch.path }
-      val cPrime = deletions.foldLeft(canonical)(_.removed(_))
-      patch.changes.iterator
-        .map(_.path)
-        .filter(authored.contains)
-        .exists(s => cPrime.ancestorsOf(s).nonEmpty || cPrime.descendantsOf(s).nonEmpty)
-
   /** R45: the known-version predicate. `version` is known (materializable) iff every patch `(c, n)`
     * selected by `n <= version[c]` exists and the selected set contains every selected patch's
     * complete base. `()` is always known. Rejection is the typed [[SnapError.UnknownVersion]] — the
@@ -115,17 +104,22 @@ object Replay:
     if everySelectedExists && basesContained then Right(())
     else Left(SnapError.UnknownVersion(version))
 
-  /** Materializes `version` (SPEC §6.1–§6.2): checks it is known (R45), selects every patch `(c,
+  /** Materializes `version` (SPEC §6.1–§6.4): checks it is known (R45), selects every patch `(c,
     * n)` with `n <= version[c]` (R65), and replays the selection from the empty tree through the
     * ready-loop (R66), validating each patch's changes against its materialized exact base tree on
-    * the way (§4.5 step 5). Base trees are materialized recursively through a per-run memo (D19).
+    * the way (§4.5 step 5) and integrating it per §6.2. Base trees are materialized recursively
+    * through a per-run memo (D19).
+    *
+    * Returns the frontier tree together with the replay's warning set (R74): the unique
+    * `(path, reason)` pairs emitted by the ready-loop's integrations, sorted by path then reason.
+    * The merge command's `joined -- preMergeLocal` set subtraction (R75) is built on two calls to
+    * this method (T17).
     */
   def materialize(
       valid: Repo.StructurallyValid,
-      version: Version,
-      integration: Integration
-  ): Either[SnapError, Tree] =
-    checkKnown(valid, version).flatMap(_ => run(valid, version, integration).map(_._1))
+      version: Version
+  ): Either[SnapError, (Tree, SortedSet[Warning])] =
+    checkKnown(valid, version).flatMap(_ => run(valid, version).map(r => (r.tree, r.warnings)))
 
   /** The canonical integration order of `version`'s selection — the sequence of dots the ready-loop
     * integrates (R66). This order is a specified observable (it is what "later" means in §6.4);
@@ -133,10 +127,9 @@ object Replay:
     */
   def integrationOrder(
       valid: Repo.StructurallyValid,
-      version: Version,
-      integration: Integration
+      version: Version
   ): Either[SnapError, Vector[Dot]] =
-    checkKnown(valid, version).flatMap(_ => run(valid, version, integration).map(_._2))
+    checkKnown(valid, version).flatMap(_ => run(valid, version).map(_.order))
 
   /** SPEC §4.5 step 5 (R51–R52, R25): applies `patch`'s changes to its materialized exact base
     * tree, validating every change on the way, and returns the authored result tree `T`.
@@ -183,14 +176,29 @@ object Replay:
     */
   private type Memo = Map[Version, Tree]
 
+  /** One completed ready-loop run: the final tree, the integration order, the warning set (R74),
+    * and the memo threaded through for sub-replays.
+    */
+  private final case class Replayed(
+      tree: Tree,
+      order: Vector[Dot],
+      warnings: SortedSet[Warning],
+      memo: Memo
+  )
+
   private def run(
       valid: Repo.StructurallyValid,
-      version: Version,
-      integration: Integration
-  ): Either[SnapError, (Tree, Vector[Dot])] =
-    loop(valid, select(valid, version), Version.empty, Tree.empty, Vector.empty, Map.empty)(
-      integration
-    ).map((tree, order, _) => (tree, order))
+      version: Version
+  ): Either[SnapError, Replayed] =
+    loop(
+      valid,
+      select(valid, version),
+      Version.empty,
+      Tree.empty,
+      Vector.empty,
+      SortedSet.empty,
+      Map.empty
+    )
 
   /** R65: every patch `(c, n)` with `n <= version[c]`, paired with its precomputed result. Iterates
     * the file-ordered patch vector; the pairing relies on `results(i)` describing `patches(i)`.
@@ -211,60 +219,336 @@ object Replay:
     * componentwise. If no patch is ready before the selection is exhausted, the history has a cycle
     * or missing dependency (R60).
     *
-    * Not tail-recursive (the base materialization recursion interleaves); depth is bounded by the
-    * selection size, fine for repository-scale inputs (D19: correctness first).
+    * Warnings accumulate across the loop's integrations into one sorted set (R74).
+    *
+    * `@tailrec` (phase-1 review CR1, stack half — reviews/phase-1-review.md,
+    * reviews/T07-review.md): the T07-era body chained these same steps through `Either#flatMap`, so
+    * the recursive call to `loop` sat inside a lambda passed to `authoredResult(...).flatMap`,
+    * never in tail position — every ready patch grew the JVM stack by a frame that could only pop
+    * once the ENTIRE rest of the replay finished, StackOverflowing on ~1k+ patch valid histories (a
+    * spec-valid input crashing instead of producing a typed result). Rewritten as an explicit match
+    * so the self-call is the last expression on every path — the compiler-verified tail call
+    * compiles to a loop, so a single invocation's own iteration is O(1) stack regardless of the
+    * selection size.
+    *
+    * [[materializeMemo]]'s own call into `loop` for a cache-miss base (below) is an ordinary,
+    * non-recursive call from a different method — invisible to `@tailrec`'s self-call check — and
+    * is itself O(1) stack for the same reason: it is `loop` again, so its internal iteration is
+    * exactly as flat, however large that sub-selection is. `ReplayStackSafetySlowSuite` pins both a
+    * deep linear history (worst case for repeated cache-miss sub-replays: the outer loop never
+    * memoizes a version under its own key, only `materializeMemo`'s cache-miss branch does, so
+    * computing patch k's base re-walks the prefix) and a deep concurrent history (repeated
+    * conflicting diamonds), well past the ~1k-patch threshold that reproduced the pre-fix crash.
+    * (Replay is Θ(n²) in patch count — D19, an accepted, T23-deferred trade-off — so that suite
+    * runs at a bounded depth, not ~5000+, and is excluded from the default `sbt test` task; see its
+    * own doc and `build.sbt`'s `slowTest` alias.)
     */
+  @tailrec
   private def loop(
       valid: Repo.StructurallyValid,
       pending: Vector[Sel],
       progress: Version,
       canonical: Tree,
       order: Vector[Dot],
+      warnings: SortedSet[Warning],
       memo: Memo
-  )(integration: Integration): Either[SnapError, (Tree, Vector[Dot], Memo)] =
-    if pending.isEmpty then Right((canonical, order, memo))
+  ): Either[SnapError, Replayed] =
+    if pending.isEmpty then Right(Replayed(canonical, order, warnings, memo))
     else
       val ready = pending.filter(s => contained(s.patch.base, progress))
       if ready.isEmpty then Left(SnapError.CyclicHistory)
       else
         val next = ready.min(selOrdering)
-        for
-          baseAndMemo <- materializeMemo(valid, next.patch.base, memo)(integration)
-          (baseTree, memo1) = baseAndMemo
-          authored <- authoredResult(baseTree, next.patch)
-          integrated <- integration.integrate(next.patch, baseTree, authored, canonical)
-          out <- loop(
-            valid,
-            pending.filterNot(_.patch.dot == next.patch.dot),
-            progress.join(next.result),
-            integrated,
-            order :+ next.patch.dot,
-            memo1
-          )(integration)
-        yield out
+        materializeMemo(valid, next.patch.base, memo) match
+          case Left(err)                => Left(err)
+          case Right((baseTree, memo1)) =>
+            authoredResult(baseTree, next.patch) match
+              case Left(err)       => Left(err)
+              case Right(authored) =>
+                integrate(next.patch, baseTree, authored, canonical) match
+                  case Left(err)                           => Left(err)
+                  case Right((nextCanonical, newWarnings)) =>
+                    loop(
+                      valid,
+                      pending.filterNot(_.patch.dot == next.patch.dot),
+                      progress.join(next.result),
+                      nextCanonical,
+                      order :+ next.patch.dot,
+                      warnings ++ newWarnings,
+                      memo1
+                    )
 
   /** Materializes a base version through the memo (D19): each version's tree is computed at most
     * once per run. The recursion terminates because a patch's base is causally strictly below its
     * result. A sub-replay CAN still fail: a steps-1–4-valid history may declare a base that is not
     * self-contained (its selection misses a dependency), which surfaces here as `CyclicHistory` —
     * spec-correct per §4.1/§6.1 (such a base is not materializable). Do not assume sub-replays are
-    * infallible when extending this (T16). See reviews/T07-review.md nit 1.
+    * infallible when extending this. See reviews/T07-review.md nit 1.
+    *
+    * A sub-replay's warnings are deliberately discarded: R74's warning set is the property of THE
+    * replay — the outer ready-loop's integrations, each selected patch integrated exactly once.
+    * Base materialization is §6.2's subroutine for obtaining `B`; it re-integrates a subset of the
+    * same patches in a smaller context, and counting those re-integrations would double-report (or
+    * misreport, since the smaller context can resolve differently). Only the tree is memoized.
     */
   private def materializeMemo(
       valid: Repo.StructurallyValid,
       version: Version,
       memo: Memo
-  )(integration: Integration): Either[SnapError, (Tree, Memo)] =
+  ): Either[SnapError, (Tree, Memo)] =
     memo.get(version) match
       case Some(tree) => Right((tree, memo))
       case None       =>
-        loop(valid, select(valid, version), Version.empty, Tree.empty, Vector.empty, memo)(
-          integration
-        ).map((tree, _, memo1) => (tree, memo1.updated(version, tree)))
+        loop(
+          valid,
+          select(valid, version),
+          Version.empty,
+          Tree.empty,
+          Vector.empty,
+          SortedSet.empty,
+          memo
+        ).map(r => (r.tree, r.memo.updated(version, r.tree)))
 
   /** `base <= progress` componentwise — the base's causal closure is integrated. */
   private def contained(base: Version, progress: Version): Boolean =
     base.entries.forall((d, m) => m <= progress.get(d))
+
+  // --- §6.2: integrating one patch (R67–R70) ---
+
+  /** The namespace pre-pass result (R68). `settled` is probed by membership only (never iterated);
+    * `removals`, `installs`, and `warnings` are sorted by construction.
+    */
+  private final case class Namespace(
+      settled: Set[SnapPath],
+      removals: SortedSet[SnapPath],
+      installs: Vector[(SnapPath, IArray[Byte])],
+      warnings: SortedSet[Warning]
+  )
+
+  private object Namespace:
+    val empty: Namespace =
+      Namespace(Set.empty, SortedSet.empty(SnapPath.ordering), Vector.empty, SortedSet.empty)
+
+  /** One resolved path change: the path's final entry in the next canonical tree (`Some(bytes)` =
+    * present with those bytes, `None` = absent) plus the warning the deciding rule emitted, if any.
+    */
+  private final case class PathOutcome(
+      path: SnapPath,
+      entry: Option[IArray[Byte]],
+      warning: Option[Warning]
+  )
+
+  /** Integrates one patch `P` into the canonical tree `C` (SPEC §6.2, R67–R70), given its
+    * materialized exact base tree `B` and its step-5-validated authored result tree `T` (= `B` with
+    * every change applied):
+    *
+    *   1. the namespace pre-pass (R68) settles whole-namespace conflicts first and overrides the
+    *      per-path rules ([[namespacePrePass]]);
+    *   1. every remaining changed path is evaluated against the same `B` and `C` (R69,
+    *      [[resolvePath]]) — never against intermediate states;
+    *   1. all resulting path changes apply together (R70): the marked current paths are removed and
+    *      every resolved entry installed in one step from `C` to the next canonical tree. The
+    *      pre-pass removals, the pre-pass installs, and the per-path outcomes touch pairwise
+    *      disjoint path sets (a settled path is excluded from per-path evaluation; a removed
+    *      current path can never be one of `P`'s changed paths — an authored deletion is excluded
+    *      from `C'`, and a changed path present in `T` alongside the conflicting `S`-path would
+    *      have failed step 5's prefix-freeness), so the application order within the step cannot
+    *      matter; the fold below fixes removals → outcomes → installs anyway.
+    *
+    * Returns the next canonical tree and the patch's warning pairs (R74; duplicates collapse in the
+    * sorted set).
+    */
+  private def integrate(
+      patch: Patch,
+      base: Tree,
+      authored: Tree,
+      canonical: Tree
+  ): Either[SnapError, (Tree, SortedSet[Warning])] =
+    val ns = namespacePrePass(patch, base, authored, canonical)
+    val remaining = patch.changes.filterNot(ch => ns.settled.contains(ch.path))
+    val outcomes = remaining.foldLeft[Either[SnapError, Vector[PathOutcome]]](
+      Right(Vector.empty)
+    ) { (acc, change) =>
+      acc.flatMap(out => resolvePath(change, base, authored, canonical).map(out :+ _))
+    }
+    outcomes.map { resolved =>
+      val afterRemovals = ns.removals.foldLeft(canonical)(_.removed(_))
+      val afterOutcomes = resolved.foldLeft(afterRemovals) { (tree, o) =>
+        o.entry match
+          case Some(bytes) => tree.updated(o.path, bytes)
+          case None        => tree.removed(o.path)
+      }
+      val nextTree = ns.installs.foldLeft(afterOutcomes) { case (tree, (path, bytes)) =>
+        tree.updated(path, bytes)
+      }
+      (nextTree, ns.warnings ++ resolved.flatMap(_.warning))
+    }
+
+  /** The namespace pre-pass (SPEC §6.2, R68), quoted: "Let `S` be the paths that `P` makes present,
+    * and let `C'` be `C` with every path that `P` authored as a deletion removed. If a path in `S`
+    * has a different current ancestor or descendant in `C'`, mark the incoming path for
+    * installation as its authored result `T` and mark every conflicting current path for removal.
+    * Each removed path emits `namespace-wins`. These decisions override the per-path rules."
+    *
+    * `S` is the paths `P` makes present — paths absent in `B` that `P`'s change leaves present in
+    * `T` (creates, whether by `put` or by a text edit over an absent path). A path already present
+    * in `B` is not *made* present by an edit or replacement; for those, a concurrent
+    * delete-plus-conflicting-create in `C` resolves through §6.4 rule 3 (the earlier concurrent
+    * delete wins), keeping the rules' precedence coherent — the pre-pass exists to let incoming
+    * CREATES clear conflicting namespace, mirroring rule 4's later-create-wins. (This reading is
+    * also the T07 review's, which characterized `S` as "newly-present paths"; see the task notes.)
+    *
+    * The warning names the REMOVED path (test 11 pins `a/b: namespace-wins` and
+    * `x: namespace-wins`). Duplicate removals and warnings collapse in the sorted sets. Two paths
+    * in `S` can never conflict with each other (`T` is prefix-free, step 5), so the fold's per-`s`
+    * decisions are independent and their union is order-independent; `changes` is path-sorted by
+    * construction, so iteration is deterministic anyway.
+    */
+  private def namespacePrePass(
+      patch: Patch,
+      base: Tree,
+      authored: Tree,
+      canonical: Tree
+  ): Namespace =
+    val authoredDeletions = patch.changes.collect { case Change.Delete(p) => p }
+    val cPrime = authoredDeletions.foldLeft(canonical)(_.removed(_))
+    val makesPresent: Vector[(SnapPath, IArray[Byte])] = patch.changes.iterator
+      .map(_.path)
+      .filter(p => !base.contains(p))
+      .flatMap(p => authored.get(p).map(bytes => (p, bytes)))
+      .toVector
+    makesPresent.foldLeft(Namespace.empty) { case (ns, (s, bytes)) =>
+      // Ancestors and descendants are proper by construction, so every conflictor is a
+      // "different" current path; `s` itself never conflicts with itself.
+      val conflictors = cPrime.ancestorsOf(s) ++ cPrime.descendantsOf(s)
+      if conflictors.isEmpty then ns
+      else
+        Namespace(
+          ns.settled + s,
+          ns.removals ++ conflictors,
+          ns.installs :+ (s -> bytes),
+          ns.warnings ++ conflictors.map(Warning(_, WarningReason.NamespaceWins))
+        )
+    }
+
+  /** Per-path dispatch for one change not settled by the namespace rule (SPEC §6.2, R69) — every
+    * path judged against the same `B` and `C`, in the spec's order:
+    *
+    *   1. path identical in `B` and `C` → apply the authored change directly (the entry becomes
+    *      `T`'s — for identical bytes, applying to `C` equals applying to `B`);
+    *   1. path identical in `C` and `T` → keep it unchanged, no warning (collapses identical
+    *      concurrent changes BEFORE OT rather than duplicating their effect);
+    *   1. `B`, `C`, `T` all text and `P` a text change → OT through the aggregate context edit
+    *      ([[transformAndApply]]);
+    *   1. otherwise §6.4's path-level rules ([[pathRules]]).
+    *
+    * Only the OT branch is fallible (typed [[SnapError.OtBaseMismatch]] / [[SnapError.InvalidEdit]]
+    * — internal invariants surfaced as values, unreachable for scripts derived from one base).
+    */
+  private def resolvePath(
+      change: Change,
+      base: Tree,
+      authored: Tree,
+      canonical: Tree
+  ): Either[SnapError, PathOutcome] =
+    val path = change.path
+    val bEntry = base.get(path)
+    val cEntry = canonical.get(path)
+    val tEntry = authored.get(path)
+    if sameEntry(bEntry, cEntry) then Right(PathOutcome(path, tEntry, None)) // R69 case 1
+    else if sameEntry(cEntry, tEntry) then Right(PathOutcome(path, cEntry, None)) // R69 case 2
+    else
+      textCase(change, bEntry, cEntry, tEntry) match
+        case Some((edit, bTokens, cTokens)) => // R69 case 3
+          transformAndApply(path, edit, bTokens, cTokens)
+        case None => // R69 case 4
+          Right(pathRules(change, bEntry, cEntry, tEntry))
+
+  /** R69 case 3's precondition: `B`, `C`, and `T` are text and `P` is a text change. Yields the
+    * incoming edit and the base/current token sequences when it holds. (`T` of a text change over a
+    * present text base is always text — rendered canonical tokens — but the condition is checked
+    * verbatim rather than assumed.)
+    */
+  private def textCase(
+      change: Change,
+      bEntry: Option[IArray[Byte]],
+      cEntry: Option[IArray[Byte]],
+      tEntry: Option[IArray[Byte]]
+  ): Option[(EditScript, Vector[String], Vector[String])] =
+    change match
+      case Change.Text(_, edit) =>
+        for
+          bBytes <- bEntry
+          cBytes <- cEntry
+          tBytes <- tEntry
+          bTokens <- TextTokens.tokenizeBytes(IArray.genericWrapArray(bBytes).toArray)
+          cTokens <- TextTokens.tokenizeBytes(IArray.genericWrapArray(cBytes).toArray)
+          if TextTokens.isText(IArray.genericWrapArray(tBytes).toArray)
+        yield (edit, bTokens, cTokens)
+      case _ => None
+
+  /** R69 case 3 (SPEC §6.2–§6.3, R71–R72): derive the AGGREGATE context edit `Q = diff(B, C)` —
+    * computed once per integrated patch from the two trees, never chained per historical patch
+    * (R72; the canonical diff may collapse a concurrent delete-then-reinsert into identity, which
+    * per-patch chaining cannot) — transform the incoming edit `P` through `Q` (§6.3), and apply the
+    * transformed script to `C`'s tokens.
+    *
+    * The application enforces exact consumption but NOT the canonical-result check: §6.5 forces a
+    * merge result for every valid history, and a transformed script may legitimately produce a
+    * token sequence with a non-final LF-less token (reviews/T15-review.md, spec-confirmed). The
+    * result is rendered to BYTES immediately — the transient non-canonical token list never
+    * escapes; every downstream consumer re-tokenizes from the tree's bytes (T15 finding 1). OT
+    * emits no warning (R74).
+    */
+  private def transformAndApply(
+      path: SnapPath,
+      edit: EditScript,
+      bTokens: Vector[String],
+      cTokens: Vector[String]
+  ): Either[SnapError, PathOutcome] =
+    val aggregate = Diff.diff(bTokens, cTokens)
+    for
+      transformed <- Ot.transform(edit, aggregate)
+      merged <- transformed.applyTransformed(cTokens).left.map(SnapError.InvalidEdit(_))
+    yield PathOutcome(path, Some(encode(merged)), None)
+
+  /** SPEC §6.4's path-level rules (R73), resolved in this order for base entry `B`, current
+    * canonical entry `C`, and incoming authored result `T`:
+    *
+    *   1. `C` = `T` → keep `C`, no warning — this predicate is R69 case 2, already checked before
+    *      dispatch reaches here ([[resolvePath]]), so it is not re-tested: on entry `C != T`;
+    *   1. `T` absent → the incoming delete wins (`delete-wins`; `C` is present here, else rule 1);
+    *   1. `B` present ∧ `C` absent → the earlier concurrent delete wins (`delete-wins`);
+    *   1. `B` absent ∧ `C`, `T` present → the incoming (canonically later) create wins
+    *      (`later-create-wins`);
+    *   1. incoming change is `put` → the incoming atomic replacement wins (`later-put-wins`);
+    *   1. otherwise `P` is text and `C` is non-text — the incompatible current content wins
+    *      (`put-wins`). (`B`, `C`, `T` are all present here: `B` and `C` absent together is R69
+    *      case 1, the other absence splits went to rules 2–4; a text `C` would have taken the OT
+    *      branch.)
+    *
+    * "Later" always means canonical integration order. Every rule that discards a whole effect
+    * emits its warning pair (R74).
+    */
+  private def pathRules(
+      change: Change,
+      bEntry: Option[IArray[Byte]],
+      cEntry: Option[IArray[Byte]],
+      tEntry: Option[IArray[Byte]]
+  ): PathOutcome =
+    val path = change.path
+    if tEntry.isEmpty then // rule 2
+      PathOutcome(path, None, Some(Warning(path, WarningReason.DeleteWins)))
+    else if bEntry.isDefined && cEntry.isEmpty then // rule 3
+      PathOutcome(path, None, Some(Warning(path, WarningReason.DeleteWins)))
+    else if bEntry.isEmpty && cEntry.isDefined then // rule 4 (tEntry is present here)
+      PathOutcome(path, tEntry, Some(Warning(path, WarningReason.LaterCreateWins)))
+    else
+      change match
+        case Change.Put(_, _) => // rule 5
+          PathOutcome(path, tEntry, Some(Warning(path, WarningReason.LaterPutWins)))
+        case _ => // rule 6
+          PathOutcome(path, cEntry, Some(Warning(path, WarningReason.PutWins)))
 
   /** Validates and applies one change: judged against `base` (the exact base tree), applied to
     * `acc` (the authored result under construction). See [[authoredResult]] for the rules.

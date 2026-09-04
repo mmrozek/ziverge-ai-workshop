@@ -70,11 +70,30 @@ final case class EditScript(ops: Vector[EditOp]):
     * produce exactly a canonical token sequence.
     */
   def applyTo(old: Vector[String]): Either[EditError, Vector[String]] =
+    run(old).flatMap { result =>
+      if !TextTokens.isCanonical(result) then Left(EditError.NonCanonicalResult)
+      else Right(result)
+    }
+
+  /** Applies a §6.3-transformed script to the current canonical tokens (T16): exactly [[applyTo]]
+    * minus the canonical-result check (R57). R57 governs *patch* scripts against their exact base;
+    * a transformed script may legitimately yield a token sequence with a non-final LF-less token
+    * (e.g. concurrent inserts into an empty file), and §6.5 forces a merge result for every valid
+    * history, so refusing here would be a spec violation (reviews/T15-review.md — spec-confirmed).
+    * Exact consumption (R56) is still enforced. The caller must render the result to bytes
+    * immediately (re-canonicalized by the next tokenization) and never reuse the raw token list.
+    */
+  def applyTransformed(old: Vector[String]): Either[EditError, Vector[String]] =
+    run(old)
+
+  /** The shared application walk (R54–R56): structural validation, then the consumption-checked
+    * fold. Result canonicality (R57) is layered on top by [[applyTo]] only.
+    */
+  private def run(old: Vector[String]): Either[EditError, Vector[String]] =
     @tailrec
     def go(k: Int, pos: Int, acc: Vector[String]): Either[EditError, Vector[String]] =
       if k == ops.length then
         if pos < old.length then Left(EditError.Underconsumption)
-        else if !TextTokens.isCanonical(acc) then Left(EditError.NonCanonicalResult)
         else Right(acc)
       else
         ops(k) match

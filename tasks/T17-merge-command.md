@@ -37,3 +37,45 @@ resolution (local part), tests in `snap/scala/src/test/scala/snap/cli/`.
       (D11 order, observable via a nonexistent remote path + dirty tree).
 
 ## Notes / decisions
+
+## Pre-implementation pointers (from the T12/T16 integrations)
+
+The engine and the materializer are done — T17 is composition, not new semantics. Do
+not re-derive merge behavior; consume these seams as they are.
+
+- **Replay's API (T16).** `Replay.materialize(structure, version)` returns
+  `Either[SnapError, (Tree, SortedSet[Warning])]`; `Repo.validateFully` returns
+  `Repo.Valid(structure, tree, warnings)`. Both `Repo.Valid` and
+  `Repo.StructurallyValid` have `private[core]` constructors — outside `snap.core` the
+  only way to obtain a proof is `Repo.validate` / `Repo.validateFully`. Don't widen
+  them; if a `snap.cli` test needs a defective history, drive it through the real
+  producer.
+- **The two replays are already available as values.** The pre-merge local set is the
+  `warnings` of the local `Repo.Valid` you loaded during the validate step; the joined
+  set is the `warnings` of the union repository's `validateFully`. R75's subtraction is
+  set difference over `SortedSet[Warning]` — nothing to recompute.
+- **Do not re-add sub-replay warnings.** `reviews/T16-review.md` ruling 5: warnings
+  raised while materializing a patch's *base* are discarded by design — a base is
+  materialized from its own closed patch set (R65), so such a warning is an artifact of
+  the sub-context and folding it in would over-report. R75's subtraction consumes only
+  the two `Repo.Valid.warnings` sets.
+- **Warning ordering is not yours to define.** Reuse `Warning`'s given `Ordering`
+  (path by `Utf8Order`, then reason). Never `String.compareTo`, never re-sort the
+  rendered lines. `WarningReason.text` yields the spec's tokens
+  (`delete-wins`, `later-create-wins`, `later-put-wins`, `namespace-wins`, `put-wins`);
+  test 11 pins the stderr bytes exactly: `warning: auto-resolved <path>: <reason>\n`.
+- **Namespace semantics are locked as D27** (`S` = paths the patch *creates*), confirmed
+  by the user. Merge consumes the engine's result; it must not add its own path-conflict
+  reasoning.
+- **Filesystem mutation goes through T12's `Materialize.install(root, current, target)`
+  only**, and `repository.json` is written strictly afterwards (R106) — the same order
+  `revert` uses. Merge creates no patch.
+- **Cost.** Replay is Θ(n²) in patch count (accepted trade-off, T23 owns any
+  optimization). Merge already pays two full replays: do exactly two, and don't
+  re-validate the same repository more than once per run.
+- **Stack.** `Replay.loop` is `@tailrec` (phase-1 CR1 was a real overflow). Any list
+  recursion you add over patches must be tail-recursive or a fold.
+- **`Errors.scala` convention.** New cases go in three clearly delimited
+  `// T17 additions` insertion points — enum case list, the `message` match, and the
+  `Messages` catalog at EOF — since Scala `enum` cases can't be appended after the
+  companion. Keep test-pinned fragments at the END of each message.

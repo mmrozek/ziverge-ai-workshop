@@ -313,11 +313,8 @@ enum SnapError:
     */
   case TextEditOverNonText(path: SnapPath)
 
-  /** T07 staging seam: [[Replay.LinearOnly]] met a genuinely concurrent case (SPEC §6.2 rules 2–4,
-    * §6.4 — T16's scope). Typed rather than silently wrong; removed when T16 lands the concurrent
-    * integration engine. Untested wording — no provided test exercises the gap by construction.
-    */
-  case ConcurrentHistoryUnsupported(dot: Dot)
+  // T07's `ConcurrentHistoryUnsupported` staging case was removed by T16: the concurrent
+  // integration engine (SPEC §6.2) replaced `Replay.LinearOnly`, closing the gap it flagged.
 
   // --- T15 additions: OT transform (SPEC §6.3, R71) ---
 
@@ -427,12 +424,11 @@ enum SnapError:
     case ContributorIdRequired                  => Messages.contributorIdRequired
     case GlobalConfigUnavailable                => Messages.globalConfigUnavailable
     // --- T07 additions ---
-    case UnknownVersion(version)           => Messages.unknownVersion(version)
-    case DeleteOfAbsentPath(path)          => Messages.deleteOfAbsentPath(path)
-    case NoOpChange(path)                  => Messages.noOpChange(path)
-    case TreePathsConflict(path)           => Messages.treePathsConflict(path)
-    case TextEditOverNonText(path)         => Messages.textEditOverNonText(path)
-    case ConcurrentHistoryUnsupported(dot) => Messages.concurrentHistoryUnsupported(dot)
+    case UnknownVersion(version)   => Messages.unknownVersion(version)
+    case DeleteOfAbsentPath(path)  => Messages.deleteOfAbsentPath(path)
+    case NoOpChange(path)          => Messages.noOpChange(path)
+    case TreePathsConflict(path)   => Messages.treePathsConflict(path)
+    case TextEditOverNonText(path) => Messages.textEditOverNonText(path)
     // --- T15 additions ---
     case OtBaseMismatch => Messages.otBaseMismatch
     // --- T10 additions ---
@@ -692,9 +688,9 @@ object Messages:
   /** Untested wording (R51/R53): a text edit needs a text base to tokenize. */
   def textEditOverNonText(path: SnapPath): String = s"text edit over non-text path: ${path.value}"
 
-  /** Temporary T07 staging diagnostic (superseded by T16's concurrent engine); untested wording. */
-  def concurrentHistoryUnsupported(dot: Dot): String =
-    s"concurrent integration is not implemented: ${dot.text}"
+  // T07's `concurrentHistoryUnsupported` entry was removed by T16 with its enum case; T16 adds no
+  // new diagnostics (OT reuses `otBaseMismatch`/`editError`, sub-replay failures reuse
+  // `cyclicHistory`, and warnings are not errors — their reason tokens render on `WarningReason`).
 
   // --- T15 additions: OT transform (SPEC §6.3; untested wording) ---
 

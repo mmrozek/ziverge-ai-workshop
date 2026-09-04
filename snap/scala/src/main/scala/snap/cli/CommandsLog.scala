@@ -21,11 +21,7 @@ object CommandsLog:
       // The canonical integration order is the specified observable (R66); this is exactly what
       // Replay.integrationOrder exists for. It cannot fail here — readRepository already replayed
       // the frontier — but the type is Either, so the error is propagated rather than forced.
-      order <- Replay.integrationOrder(
-        valid.structure,
-        valid.repository.frontier,
-        Replay.LinearOnly
-      )
+      order <- Replay.integrationOrder(valid.structure, valid.repository.frontier)
     yield render(valid, order)
 
   private def render(valid: Repo.Valid, order: Vector[Dot]): String =

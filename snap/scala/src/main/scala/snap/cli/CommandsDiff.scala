@@ -41,9 +41,14 @@ object CommandsDiff:
           newVersion <- parseVersionArg(newText)
           root <- Commands.requireRoot(repoRoot)
           valid <- Commands.readRepository(root)
-          oldTree <- Replay.materialize(valid.structure, oldVersion, Replay.LinearOnly)
-          newTree <- Replay.materialize(valid.structure, newVersion, Replay.LinearOnly)
-        yield DiffRender.render(oldTree, newTree)
+          // `diff <old> <new>` never reports warnings (SPEC §7.6 has no warning output for this
+          // form — only `merge`'s R75 set subtraction does, T17); the historical auto-resolution
+          // pairs from replaying two arbitrary known versions are discarded here, not silently
+          // dropped from a place that needs them (contrast `Repo.Valid.warnings`, threaded through
+          // by `Store`/`Repo` for that exact reason).
+          oldReplay <- Replay.materialize(valid.structure, oldVersion)
+          newReplay <- Replay.materialize(valid.structure, newVersion)
+        yield DiffRender.render(oldReplay._1, newReplay._1)
       // Grammar-valid `--repo` shape (SPEC §7.6); remote resolution lands in T20/T21.
       case _ :: _ :: "--repo" :: _ :: Nil => Left(SnapError.NotImplemented)
       case _                              => Left(SnapError.DiffUsage)
