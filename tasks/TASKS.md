@@ -16,8 +16,8 @@ the **only** place status lives.
 | T08 | 1 | CLI dispatch, discovery, plain output, exit codes | 2 | done | T02 | 6e46415 |
 | T09 | 1 | init + config | 2 | done | T06,T08 | 0fc896d |
 | T10 | 1 | Worktree scanner, status, commit, log | 3 | done | T07,T09 | 41a5caa |
-| T11 | 2 | diff command & rendering | 3 | review | T10 | |
-| T12 | 2 | Filesystem install & revert | 2 | todo | T11 | |
+| T11 | 2 | diff command & rendering | 3 | done | T10 | 20f3896 |
+| T12 | 2 | Filesystem install & revert | 2 | in-progress | T11 | |
 | T13 | 2 | CLI grammar matrix & port validation | 2 | todo | T12 | |
 | T14 | 2 | Validation matrices & error catalog completion | 3 | todo | T12 | |
 | T15 | 3 | OT transform | 3 | done | T05 | acfb222 |
