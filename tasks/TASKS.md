@@ -22,7 +22,7 @@ the **only** place status lives.
 | T14 | 2 | Validation matrices & error catalog completion | 3 | done | T12 | 6daa92d |
 | T15 | 3 | OT transform | 3 | done | T05 | acfb222 |
 | T16 | 3 | Concurrent replay: namespace, path rules, warnings | 5 | done | T07,T15 | 071639e |
-| T17 | 3 | merge command | 3 | verifying | T12,T16 | |
+| T17 | 3 | merge command | 3 | review | T12,T16 | |
 | T18 | 3 | Convergence hardening & property suite | 2 | in-progress | T17 | |
 | T19 | 4 | --serve HTTP server | 3 | in-progress | T07,T13 | |
 | T20 | 4 | HTTP client & remote operands | 2 | todo | T17,T19 | |
