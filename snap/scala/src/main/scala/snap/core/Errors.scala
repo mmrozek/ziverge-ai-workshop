@@ -319,6 +319,15 @@ enum SnapError:
     */
   case ConcurrentHistoryUnsupported(dot: Dot)
 
+  // --- T15 additions: OT transform (SPEC §6.3, R71) ---
+
+  /** The two scripts handed to [[Ot.transform]] consume different base token counts (R71: "Both
+    * scripts consume the same base token count", "No unmatched retain or delete can remain"). An
+    * internal invariant for replay — both scripts derive from the same base tree — surfaced as a
+    * typed error rather than a defensive throw (D4; untested wording).
+    */
+  case OtBaseMismatch
+
   /** One-line diagnostic detail, without the `snap: ` prefix — the CLI layer (T08) prepends the
     * prefix when printing (spec §10 `snap: <detail>`).
     */
@@ -380,6 +389,8 @@ enum SnapError:
     case TreePathsConflict(path)           => Messages.treePathsConflict(path)
     case TextEditOverNonText(path)         => Messages.textEditOverNonText(path)
     case ConcurrentHistoryUnsupported(dot) => Messages.concurrentHistoryUnsupported(dot)
+    // --- T15 additions ---
+    case OtBaseMismatch => Messages.otBaseMismatch
 
 /** Message catalog (DESIGN D5): every diagnostic string of the implementation lives here,
   * test-pinned ones verbatim. No other module builds diagnostic text. Where a provided test anchors
@@ -604,3 +615,8 @@ object Messages:
   /** Temporary T07 staging diagnostic (superseded by T16's concurrent engine); untested wording. */
   def concurrentHistoryUnsupported(dot: Dot): String =
     s"concurrent integration is not implemented: ${dot.text}"
+
+  // --- T15 additions: OT transform (SPEC §6.3; untested wording) ---
+
+  /** Internal replay invariant (R71): both transform inputs must derive from one base tree. */
+  val otBaseMismatch: String = "edit scripts consume different base token counts"

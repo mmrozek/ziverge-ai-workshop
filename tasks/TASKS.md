@@ -20,7 +20,7 @@ the **only** place status lives.
 | T12 | 2 | Filesystem install & revert | 2 | todo | T11 | |
 | T13 | 2 | CLI grammar matrix & port validation | 2 | todo | T12 | |
 | T14 | 2 | Validation matrices & error catalog completion | 3 | todo | T12 | |
-| T15 | 3 | OT transform | 3 | in-progress | T05 | |
+| T15 | 3 | OT transform | 3 | done | T05 | |
 | T16 | 3 | Concurrent replay: namespace, path rules, warnings | 5 | todo | T07,T15 | |
 | T17 | 3 | merge command | 3 | todo | T12,T16 | |
 | T18 | 3 | Convergence hardening & property suite | 2 | todo | T17 | |

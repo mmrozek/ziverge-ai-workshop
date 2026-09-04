@@ -53,3 +53,7 @@ tests in `snap/scala/src/test/scala/snap/core/`.
 - T07's `Replay.Integration` trait is your seam: replace `Replay.LinearOnly`, delete
   `SnapError.ConcurrentHistoryUnsupported`, widen results to carry warnings
   (`(Tree, SortedSet[Warning])` per DESIGN §5).
+- `reviews/T15-review.md`: apply transformed scripts WITHOUT the canonical-result check
+  (exact consumption still enforced) — reviewer-confirmed spec-forced (§6.5) — and
+  render merged output to BYTES, re-tokenizing for downstream use; never let the
+  non-canonical token list escape the transform site (finding 1).

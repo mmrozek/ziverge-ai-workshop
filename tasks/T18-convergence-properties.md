@@ -37,3 +37,5 @@ byte-identical across repeated runs. Fix whatever divergence the matrix tests ex
 - From `reviews/T05-review.md` finding 1: add the script-shape golden pinning
   equality-before-tie on trailing repeated lines — `diff([a\n,a\n],[a\n])` must be
   exactly `[retain 1, delete 1]` (guards R64 against any future diff refactor).
+- From `reviews/T15-review.md` finding 2: directed OT test — P-insert row when Q's
+  pending head is a delete (currently only probabilistically covered).
