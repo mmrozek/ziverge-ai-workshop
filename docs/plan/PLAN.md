@@ -1,6 +1,7 @@
 # PLAN — snap (Scala implementation)
 
-> **Approval:** ⏳ pending user approval — no implementation before this line records it.
+> **Approval:** ✅ approved by the user 2026-09-04, including amendments `2bca0e6`
+> (opinionated libraries) and `8c081c8` (Scala-first, jawn-parser) — see changelog.
 
 Phases are vertical slices named by the provided tests they turn green. Task
 **definitions** live in `tasks/T<nn>-*.md` (single source of truth), **status** lives in
