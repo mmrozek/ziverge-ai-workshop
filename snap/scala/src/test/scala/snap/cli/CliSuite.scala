@@ -69,15 +69,17 @@ class CliSuite extends munit.FunSuite:
 
   test("known-but-unimplemented commands print 'not implemented' once a repo is found") {
     // T10 removed status/log/commit/diff from this list (real handlers now); T12 removed
-    // revert; the remainder shrinks further as T17/T19 land.
+    // revert; the remainder shrinks further as T17/T19 land. T13 gave `merge`/`--serve` real
+    // grammar (SPEC §7.8/§7.9, Grammar) — `merge` now needs its one repository operand to reach
+    // the stub at all (a bare `merge` is itself a grammar error, covered separately below).
     val root = tempDir()
     Files.createDirectory(root.resolve(".snap"))
-    for cmd <- List("merge", "--serve") do
+    for args <- List(List("merge", "other-repo"), List("--serve")) do
       val fx = TestEnv(cwd = root)
-      val exit = Cli.run(fx.env, List(cmd))
-      assertEquals(exit, 1, s"command $cmd")
-      assertEquals(fx.stdout, "", s"command $cmd")
-      assertEquals(fx.stderr, "snap: not implemented\n", s"command $cmd")
+      val exit = Cli.run(fx.env, args)
+      assertEquals(exit, 1, s"command $args")
+      assertEquals(fx.stdout, "", s"command $args")
+      assertEquals(fx.stderr, "snap: not implemented\n", s"command $args")
   }
 
   test("init never requires a pre-existing repository (it creates one instead, T09)") {
@@ -176,4 +178,39 @@ class CliSuite extends munit.FunSuite:
     Files.createSymbolicLink(nested.resolve(".snap"), realDir)
     val fx = TestEnv(cwd = nested)
     assertEquals(Cli.discoverRepo(fx.env), Right(root.toAbsolutePath.normalize()))
+  }
+
+  // ------------------------------------------------------------ T13: grammar before discovery
+
+  test(
+    "CR7: a grammar error in a non-repository directory prints the grammar error, " +
+      "never 'not a Snap repository'"
+  ) {
+    // `status` needs repository discovery (Command.needsRepoDiscovery) and this cwd has no
+    // `.snap` anywhere above it, so if Grammar ran after discovery (the pre-T13 bug) this would
+    // wrongly report "not a Snap repository" instead of the grammar violation.
+    val fx = TestEnv(cwd = tempDir())
+    val exit = Cli.run(fx.env, List("status", "extra"))
+    assertEquals(exit, 1)
+    assertEquals(fx.stdout, "")
+    assertEquals(fx.stderr, "snap: invalid command or arguments\n")
+  }
+
+  test(
+    "CR7: config's grammar error outside any repository still wins over " +
+      "'not a Snap repository' (D10 governs only value-valid config, not shape)"
+  ) {
+    val fx = TestEnv(cwd = tempDir())
+    val exit = Cli.run(fx.env, List("config", "not-a-recognized-shape"))
+    assertEquals(exit, 1)
+    assertEquals(fx.stdout, "")
+    assertEquals(fx.stderr, "snap: invalid command or arguments\n")
+  }
+
+  test("CR7: diff's own usage channel also wins over 'not a Snap repository'") {
+    val fx = TestEnv(cwd = tempDir())
+    val exit = Cli.run(fx.env, List("diff", "()"))
+    assertEquals(exit, 1)
+    assertEquals(fx.stdout, "")
+    assert(fx.stderr.contains("usage: snap diff"), fx.stderr)
   }

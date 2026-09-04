@@ -142,6 +142,16 @@ class CommandsInitSuite extends FunSuite:
     assertEquals(fx.stderr, "snap: invalid command or arguments\n")
   }
 
+  test("CR14: an explicit empty-string operand is a grammar error, not a silent '.' default") {
+    val root = tempDir()
+    val fx = TestEnv(cwd = root)
+    val exit = Cli.run(fx.env, List("init", ""))
+    assertEquals(exit, 1)
+    assertEquals(fx.stdout, "")
+    assertEquals(fx.stderr, "snap: invalid command or arguments\n")
+    assert(!Files.exists(root.resolve(".snap")), "must not silently initialize the cwd")
+  }
+
   test("init directly via CommandsInit.handler ignores any repoRoot it is given") {
     // Cli.run never resolves a repository for init (Command.needsRepoDiscovery), but the handler's
     // own logic must not depend on that argument either.

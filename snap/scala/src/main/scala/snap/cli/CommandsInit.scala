@@ -27,13 +27,16 @@ object CommandsInit:
   /** `init`'s only operand is an optional path (SPEC §7.1: "`path` defaults to `.`"); it takes no
     * options at all, so a single `--`-shaped operand is rejected here rather than accepted as a
     * (legal but bizarre) directory name — the coarse reading of R79's "unknown options... are
-    * errors" for a command with zero defined options (T13 owns the exhaustive matrix; recorded in
-    * the T09 task notes).
+    * errors" for a command with zero defined options. An explicit empty-string operand is rejected
+    * too (T13/CR14: `snap init ""` must not silently default to `.` the way a genuinely absent
+    * operand does) — [[Grammar.initRule]] already rejects both shapes before this handler is ever
+    * reached from [[Cli.run]]; the same guard is kept here so the handler is correct on its own,
+    * not only behind that gate (e.g. a test or future caller invoking [[handler]] directly).
     */
   private def parsePath(operands: List[String]): Either[SnapError, String] = operands match
-    case Nil                                   => Right(".")
-    case path :: Nil if !path.startsWith("--") => Right(path)
-    case _                                     => Left(SnapError.InvalidCommand)
+    case Nil                                                    => Right(".")
+    case path :: Nil if path.nonEmpty && !path.startsWith("--") => Right(path)
+    case _                                                      => Left(SnapError.InvalidCommand)
 
   /** Local repository operands resolve against the process working directory (SPEC §7 preamble). */
   private def resolveTarget(env: Env, rawPath: String): Path =

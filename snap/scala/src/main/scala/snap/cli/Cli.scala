@@ -85,7 +85,9 @@ object Cli:
     * touching `Cli`. T09 replaced the `Init`/`Config` entries with their real handlers; T10
     * replaced `Status`/`Log`/`Commit` and gave `Diff` its scan-precedence seam ([[CommandsDiff]]);
     * T11 completed `Diff`'s rendering and its `<old> <new> [--repo <repository>]` forms (remote
-    * `--repo` resolution stays [[SnapError.NotImplemented]] until T20/T21).
+    * `--repo` resolution stays [[SnapError.NotImplemented]] until T20/T21). T13 gave `--serve` its
+    * grammar-and-port-only handler ([[CommandsServe]]) — the server itself is still
+    * [[SnapError.NotImplemented]] until T19; `Merge` stays on the stub until T17.
     */
   val defaultCommands: Map[Command, CommandHandler] =
     Command.values.iterator
@@ -99,6 +101,7 @@ object Cli:
       .updated(Command.Commit, CommandsCommit.handler)
       .updated(Command.Diff, CommandsDiff.handler)
       .updated(Command.Revert, CommandsRevert.handler)
+      .updated(Command.Serve, CommandsServe.handler)
 
   /** Runs one CLI invocation to completion and returns the process exit code (0/1 — R107; a
     * top-level catch-all for exit 2 lives in `Main`, not here, since it must also catch anything
@@ -107,7 +110,10 @@ object Cli:
     *      "eager work" gotcha 9 forbids) — before *any* command, including `--version` (test 28);
     *   2. parse the command line;
     *   3. `--version` short-circuits with no repo discovery;
-    *   4. every other command resolves a repository first when it needs one (R77), then dispatches.
+    *   4. [[Grammar]]'s exhaustive per-command matrix (R79, T13) — BEFORE repository discovery or
+    *      any other filesystem IO (phase-1 review CR7): a grammar error in a non-repository
+    *      directory must print the grammar error, never `not a Snap repository`;
+    *   5. every other command resolves a repository first when it needs one (R77), then dispatches.
     */
   def run(
       env: Env,
@@ -122,9 +128,13 @@ object Cli:
           case Right(ParsedCommand(Command.Version, _))     => emit(env, Right(versionOutput))
           case Right(parsed @ ParsedCommand(cmd, operands)) =>
             val outcome =
-              (if Command.needsRepoDiscovery(parsed) then discoverRepo(env).map(Some.apply)
-               else Right(None))
-                .flatMap(root => commands(cmd)(env, root, operands))
+              Grammar
+                .check(cmd, operands)
+                .flatMap { _ =>
+                  (if Command.needsRepoDiscovery(parsed) then discoverRepo(env).map(Some.apply)
+                   else Right(None))
+                    .flatMap(root => commands(cmd)(env, root, operands))
+                }
             emit(env, outcome)
 
   /** Coarse command-line grammar (R79): recognizes the command surface and the one arity rule T08

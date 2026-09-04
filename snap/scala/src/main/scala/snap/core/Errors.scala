@@ -390,6 +390,14 @@ enum SnapError:
     */
   case CannotUpdateWorkingTree(detail: String)
 
+  // --- T13 additions: `--serve` port validation (SPEC §7.9, D9) ---
+
+  /** `--serve`'s port operand is not a canonical decimal integer in `0..65535` (D9; test 14 pins
+    * the exact line `snap: invalid port: 65536`). `raw` is untrusted CLI argv text read before
+    * validation — sanitized (PR1/CR3) since it may legally contain control characters.
+    */
+  case InvalidPort(raw: String)
+
   /** One-line diagnostic detail, without the `snap: ` prefix — the CLI layer (T08) prepends the
     * prefix when printing (spec §10 `snap: <detail>`).
     */
@@ -465,6 +473,8 @@ enum SnapError:
     case WorkingTreeDirty                => Messages.workingTreeDirty
     case TargetTreeAlreadyCurrent        => Messages.targetTreeAlreadyCurrent
     case CannotUpdateWorkingTree(detail) => Messages.cannotUpdateWorkingTree(detail)
+    // --- T13 additions ---
+    case InvalidPort(raw) => Messages.invalidPort(raw)
 
 /** Message catalog (DESIGN D5): every diagnostic string of the implementation lives here,
   * test-pinned ones verbatim. No other module builds diagnostic text. Where a provided test anchors
@@ -770,3 +780,12 @@ object Messages:
 
   /** Untested wording (filesystem boundary, mirroring [[cannotReadWorkTree]]). */
   def cannotUpdateWorkingTree(detail: String): String = s"cannot update working tree: $detail"
+
+  // --- T13 additions: `--serve` port validation (SPEC §7.9, D9) ---
+
+  /** Pinned verbatim (test 14): `snap: invalid port: 65536`. Echoes the raw offending operand
+    * rather than a specific reason, mirroring [[invalidVersionArgument]]'s established pattern for
+    * the same class of CLI argument-value error — neither test 14 nor 24 pins more than the class.
+    * `raw` is untrusted CLI argv text read before validation — sanitized (PR1/CR3).
+    */
+  def invalidPort(raw: String): String = s"invalid port: ${sanitizeControlChars(raw)}"
