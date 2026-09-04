@@ -68,11 +68,11 @@ class CliSuite extends munit.FunSuite:
   }
 
   test("known-but-unimplemented commands print 'not implemented' once a repo is found") {
-    // T10 removed status/log/commit/diff from this list (real handlers now); the remainder
-    // shrinks further as T12/T17/T19 land.
+    // T10 removed status/log/commit/diff from this list (real handlers now); T12 removed
+    // revert; the remainder shrinks further as T17/T19 land.
     val root = tempDir()
     Files.createDirectory(root.resolve(".snap"))
-    for cmd <- List("revert", "merge", "--serve") do
+    for cmd <- List("merge", "--serve") do
       val fx = TestEnv(cwd = root)
       val exit = Cli.run(fx.env, List(cmd))
       assertEquals(exit, 1, s"command $cmd")

@@ -368,6 +368,27 @@ enum SnapError:
     * [[InvalidCommand]]).
     */
   case DiffUsage
+  // --- T12 additions: filesystem install & revert (SPEC §7.7, §10; R88, R103–R106) ---
+
+  /** `merge`/`revert` refuse to replace a dirty working tree (SPEC §2/§10, R27; test 07 pins the
+    * full line `snap: working tree is dirty`). Checked with the same [[snap.cli.WorkingChanges]]
+    * comparison `status`/`commit` use, before any filesystem mutation (R103).
+    */
+  case WorkingTreeDirty
+
+  /** `snap revert`'s target-tree comparison found no difference from the current tree (SPEC §7.7;
+    * test 07 pins the full line `snap: target tree is already current`). No patch is authored and
+    * nothing is installed.
+    */
+  case TargetTreeAlreadyCurrent
+
+  /** Filesystem failure while installing a target tree over the working directory (SPEC §10,
+    * R105–R106; [[snap.fs.Materialize]]) — untested wording, mirrors [[CannotReadWorkTree]]/
+    * [[CannotWriteRepository]]'s boundary pattern. A failure here may leave a partially updated,
+    * dirty working tree with the OLD `repository.json` still intact (R106) — the metadata write
+    * never runs until installation returns `Right`.
+    */
+  case CannotUpdateWorkingTree(detail: String)
 
   /** One-line diagnostic detail, without the `snap: ` prefix — the CLI layer (T08) prepends the
     * prefix when printing (spec §10 `snap: <detail>`).
@@ -440,6 +461,10 @@ enum SnapError:
     // --- T11 additions ---
     case InvalidVersionArgument(raw) => Messages.invalidVersionArgument(raw)
     case DiffUsage                   => Messages.diffUsage
+    // --- T12 additions ---
+    case WorkingTreeDirty                => Messages.workingTreeDirty
+    case TargetTreeAlreadyCurrent        => Messages.targetTreeAlreadyCurrent
+    case CannotUpdateWorkingTree(detail) => Messages.cannotUpdateWorkingTree(detail)
 
 /** Message catalog (DESIGN D5): every diagnostic string of the implementation lives here,
   * test-pinned ones verbatim. No other module builds diagnostic text. Where a provided test anchors
@@ -733,3 +758,15 @@ object Messages:
     * The exact wording mirrors SPEC §7.6's fenced grammar block.
     */
   val diffUsage: String = "usage: snap diff <old> <new> [--repo <repository>]"
+  // --- T12 additions: filesystem install & revert (SPEC §7.7, §10; R88, R103–R106) ---
+
+  /** Pinned verbatim (test 07, R27). Shared wording class with [[workingTreeClean]] but the
+    * opposite direction: `commit` requires a dirty tree, `merge`/`revert` require a clean one.
+    */
+  val workingTreeDirty: String = "working tree is dirty"
+
+  /** Pinned verbatim (test 07, R88). */
+  val targetTreeAlreadyCurrent: String = "target tree is already current"
+
+  /** Untested wording (filesystem boundary, mirroring [[cannotReadWorkTree]]). */
+  def cannotUpdateWorkingTree(detail: String): String = s"cannot update working tree: $detail"
