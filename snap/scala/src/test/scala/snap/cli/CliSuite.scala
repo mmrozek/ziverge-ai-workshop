@@ -78,13 +78,16 @@ class CliSuite extends munit.FunSuite:
       assertEquals(fx.stderr, "snap: not implemented\n", s"command $cmd")
   }
 
-  test("init never requires a pre-existing repository (its stub still dispatches)") {
-    // A nonexistent cwd would fail discovery with "not a Snap repository" if init ran it;
-    // seeing "not implemented" instead proves init skips discovery entirely.
-    val fx = TestEnv(cwd = Path.of("/does/not/exist/either/snap-t08"))
+  test("init never requires a pre-existing repository (it creates one instead, T09)") {
+    // A nonexistent-until-now cwd would fail discovery with "not a Snap repository" if init
+    // ran it (as every other command does); succeeding here proves init skips discovery
+    // entirely and creates the repository itself (T08's stub-era assertion updated for T09's
+    // real `init`, which no longer returns "not implemented").
+    val fx = TestEnv(cwd = tempDir())
     val exit = Cli.run(fx.env, List("init"))
-    assertEquals(exit, 1)
-    assertEquals(fx.stderr, "snap: not implemented\n")
+    assertEquals(exit, 0)
+    assertEquals(fx.stdout, "()\n")
+    assertEquals(fx.stderr, "")
   }
 
   test("discovery finds .snap from a nested cwd and resolves to that ancestor") {
@@ -94,7 +97,8 @@ class CliSuite extends munit.FunSuite:
     val fx = TestEnv(cwd = nested)
     val commands = Cli.defaultCommands.updated(
       Command.Status,
-      (_: Env, repoRoot: Option[Path]) => Right(repoRoot.map(_.toString).getOrElse("NONE") + "\n")
+      (_: Env, repoRoot: Option[Path], _: List[String]) =>
+        Right(repoRoot.map(_.toString).getOrElse("NONE") + "\n")
     )
     val exit = Cli.run(fx.env, List("status"), commands)
     assertEquals(exit, 0)

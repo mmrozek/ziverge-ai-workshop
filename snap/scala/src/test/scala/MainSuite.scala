@@ -40,7 +40,7 @@ class MainSuite extends munit.FunSuite:
     // No `throw` keyword used (DisableSyntax noThrows): String.toInt on non-numeric input raises
     // NumberFormatException on its own, standing in for "a bug slipped past every Either/SnapError
     // check".
-    val throwing: CommandHandler = (_, _) => Right("not-a-number".toInt.toString)
+    val throwing: CommandHandler = (_, _, _) => Right("not-a-number".toInt.toString)
     val commands = Cli.defaultCommands.updated(Command.Status, throwing)
     val fx = TestEnv(cwd = repoDir())
     val exit = Main.run(fx.env, List("status"), commands)

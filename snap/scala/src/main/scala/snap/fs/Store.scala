@@ -1,9 +1,11 @@
 package snap.fs
 
+import snap.core.ContributorId
 import snap.core.Repo
 import snap.core.Repository
 import snap.core.SnapError
 import snap.core.TextTokens
+import snap.json.ConfigCodec
 import snap.json.JsonParser
 import snap.json.RepoCodec
 
@@ -15,7 +17,8 @@ import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
 
-/** `repository.json` persistence (DESIGN §7, R105, gotcha 10).
+/** `repository.json` and contributor-configuration persistence (DESIGN §7, R105, gotcha 10; config
+  * IO added T09).
   *
   * This object is the filesystem effect boundary: NIO failures are converted to typed errors here
   * via `Try` — exceptions never act as control flow above this layer (D4; same pattern as
@@ -56,15 +59,27 @@ object Store:
   def writeRepository(file: Path, repository: Repository): Either[SnapError, Unit] =
     atomicWrite(file, RepoCodec.encodeBytes(repository))
 
-  /** Atomic byte write: stage to the same-directory temp file, then rename over the target. */
-  def atomicWrite(target: Path, bytes: Array[Byte]): Either[SnapError, Unit] =
-    stage(target, bytes).flatMap(temp => commit(temp, target))
-
-  /** Step 1 of the atomic write: the full content lands in `<dir>/repository.json.tmp`. The target
-    * is not touched. Exposed to the package so tests can assert the crash-window invariant (a
-    * failure after staging leaves the target byte-identical).
+  /** Atomic byte write: stage to the same-directory temp file, then rename over the target.
+    * `onError` lets other atomic writers in this object (config — T09) report their own diagnostic
+    * class instead of [[SnapError.CannotWriteRepository]]; it defaults to the repository failure so
+    * every existing call site is unaffected.
     */
-  private[fs] def stage(target: Path, bytes: Array[Byte]): Either[SnapError, Path] =
+  def atomicWrite(
+      target: Path,
+      bytes: Array[Byte],
+      onError: Throwable => SnapError = writeFailure
+  ): Either[SnapError, Unit] =
+    stage(target, bytes, onError).flatMap(temp => commit(temp, target, onError))
+
+  /** Step 1 of the atomic write: the full content lands in `<dir>/repository.json.tmp` (or the
+    * config equivalent). The target is not touched. Exposed to the package so tests can assert the
+    * crash-window invariant (a failure after staging leaves the target byte-identical).
+    */
+  private[fs] def stage(
+      target: Path,
+      bytes: Array[Byte],
+      onError: Throwable => SnapError = writeFailure
+  ): Either[SnapError, Path] =
     val temp = tempPathFor(target)
     attempt(
       Files.write(
@@ -74,15 +89,19 @@ object Store:
         StandardOpenOption.TRUNCATE_EXISTING,
         StandardOpenOption.WRITE
       )
-    )(writeFailure).map(_ => temp)
+    )(onError).map(_ => temp)
 
   /** Step 2: atomically rename the staged temp file over the target (same directory, so the move
     * can never cross devices).
     */
-  private[fs] def commit(temp: Path, target: Path): Either[SnapError, Unit] =
+  private[fs] def commit(
+      temp: Path,
+      target: Path,
+      onError: Throwable => SnapError = writeFailure
+  ): Either[SnapError, Unit] =
     attempt(
       Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-    )(writeFailure).map(_ => ())
+    )(onError).map(_ => ())
 
   private[fs] def tempPathFor(target: Path): Path =
     target.resolveSibling(TempFileName)
@@ -92,6 +111,53 @@ object Store:
 
   private def writeFailure(e: Throwable): SnapError =
     SnapError.CannotWriteRepository(describe(e))
+
+  // ---------------------------------------------------------------- config (T09 additions)
+
+  /** `.snap/config.json` file name (SPEC §8, R99). */
+  val ConfigFileName: String = "config.json"
+
+  /** `$HOME/.snapconfig.json` file name (SPEC §8, R99). */
+  val GlobalConfigFileName: String = ".snapconfig.json"
+
+  /** Reads and validates one contributor-configuration file (SPEC §8, R99): `None` when `file` is
+    * absent (not an error), the validated id when a present file decodes cleanly, or the
+    * read/parse/ decode error otherwise — the same bytes → UTF-8 → strict JSON → typed decode
+    * pipeline as [[readRepository]], so a malformed file, an unknown/duplicate field, or an invalid
+    * id is reported exactly when R99 requires it (only for a file that is actually read). Performs
+    * no filesystem mutation.
+    */
+  def readConfig(file: Path): Either[SnapError, Option[ContributorId]] =
+    if !Files.exists(file) then Right(None)
+    else
+      for
+        bytes <- attempt(Files.readAllBytes(file))(readConfigFailure)
+        text <- TextTokens.decode(bytes).toRight(SnapError.ConfigNotUtf8)
+        json <- JsonParser.parse(text)
+        id <- ConfigCodec.decode(json)
+      yield Some(id)
+
+  /** Serializes `id` canonically (D7) and atomically overwrites `file` completely (SPEC §8:
+    * "preserves no unknown fields") — the previous content, if any, is never read first.
+    */
+  def writeConfig(file: Path, id: ContributorId): Either[SnapError, Unit] =
+    atomicWrite(file, ConfigCodec.encodeBytes(id), writeConfigFailure)
+
+  /** Creates `dir` and any missing parent directories (SPEC §7.1: `init`'s target `path` "is
+    * created if absent"); a no-op when `dir` already exists, and existing files inside are
+    * untouched (test 02's premise).
+    */
+  def createDirectories(dir: Path): Either[SnapError, Unit] =
+    attempt(Files.createDirectories(dir))(createDirectoryFailure).map(_ => ())
+
+  private def readConfigFailure(e: Throwable): SnapError =
+    SnapError.CannotReadConfig(describe(e))
+
+  private def writeConfigFailure(e: Throwable): SnapError =
+    SnapError.CannotWriteConfig(describe(e))
+
+  private def createDirectoryFailure(e: Throwable): SnapError =
+    SnapError.CannotCreateDirectory(describe(e))
 
   /** One-line failure detail: the exception message when present (NIO messages are the offending
     * path), else the class name. Deterministic for a given filesystem state.

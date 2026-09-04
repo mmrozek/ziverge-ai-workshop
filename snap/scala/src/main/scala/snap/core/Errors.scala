@@ -232,6 +232,55 @@ enum SnapError:
   /** Filesystem failure while writing `repository.json` (untested wording). */
   case CannotWriteRepository(detail: String)
 
+  // --- T09 additions: init + config (SPEC §7.1, §7.2, §8; R80–R82, R98–R100) ---
+
+  /** `snap init`'s target already has a `.snap` directory (SPEC §7.1: "Reinitializing a repository
+    * is an error"; test 02 pins the substring `repository already exists`). Carries the resolved
+    * target path for debugging.
+    */
+  case RepositoryAlreadyExists(path: String)
+
+  /** `snap init`'s target sits inside an already-initialized repository, discovered by walking up
+    * from the target (SPEC §7.1: "Initializing a target inside an existing repository is an error";
+    * test 02 pins the substring `cannot initialize inside repository`). Carries the ancestor
+    * repository's root for debugging.
+    */
+  case CannotInitializeInsideRepository(existingRoot: String)
+
+  /** Filesystem failure creating `init`'s target directory or its `.snap` subdirectory (untested
+    * wording).
+    */
+  case CannotCreateDirectory(detail: String)
+
+  /** The configuration document is not a JSON object (SPEC §8; untested wording — `RepoCodec`'s
+    * `RepositoryNotObject` is the analogous case for `repository.json`).
+    */
+  case ConfigNotObject
+
+  /** `config.json`/`.snapconfig.json` bytes are not valid UTF-8 text — rendered in the `invalid
+    * JSON` diagnostic class, mirroring [[RepositoryNotUtf8]] (untested wording).
+    */
+  case ConfigNotUtf8
+
+  /** Filesystem failure while reading a configuration file (untested wording). */
+  case CannotReadConfig(detail: String)
+
+  /** Filesystem failure while writing a configuration file (untested wording). */
+  case CannotWriteConfig(detail: String)
+
+  /** Neither local `.snap/config.json` nor `$HOME/.snapconfig.json` provides a contributor id, and
+    * the command (`commit`/`revert`) requires one (SPEC §8, R100; test 19 pins this exact line).
+    */
+  case ContributorIdRequired
+
+  /** `snap config --global` was invoked but `HOME` is absent from the environment, so there is no
+    * path to write the global configuration file to (SPEC §8: "`--global`... needs no repository" —
+    * silent about a missing `HOME` for a *write*, unlike the read side's R99 "unavailable, not an
+    * error"; a write has nowhere to go, so it must fail — untested wording, decision recorded in
+    * the T09 task notes).
+    */
+  case GlobalConfigUnavailable
+
   /** One-line diagnostic detail, without the `snap: ` prefix — the CLI layer (T08) prepends the
     * prefix when printing (spec §10 `snap: <detail>`).
     */
@@ -276,6 +325,16 @@ enum SnapError:
     case RepositoryNotUtf8              => Messages.repositoryNotUtf8
     case CannotReadRepository(detail)   => Messages.cannotReadRepository(detail)
     case CannotWriteRepository(detail)  => Messages.cannotWriteRepository(detail)
+    // --- T09 additions ---
+    case RepositoryAlreadyExists(path)          => Messages.repositoryAlreadyExists(path)
+    case CannotInitializeInsideRepository(root) => Messages.cannotInitializeInsideRepository(root)
+    case CannotCreateDirectory(detail)          => Messages.cannotCreateDirectory(detail)
+    case ConfigNotObject                        => Messages.configNotObject
+    case ConfigNotUtf8                          => Messages.configNotUtf8
+    case CannotReadConfig(detail)               => Messages.cannotReadConfig(detail)
+    case CannotWriteConfig(detail)              => Messages.cannotWriteConfig(detail)
+    case ContributorIdRequired                  => Messages.contributorIdRequired
+    case GlobalConfigUnavailable                => Messages.globalConfigUnavailable
 
 /** Message catalog (DESIGN D5): every diagnostic string of the implementation lives here,
   * test-pinned ones verbatim. No other module builds diagnostic text. Where a provided test anchors
@@ -320,7 +379,15 @@ object Messages:
 
   // --- T06: id / version values (R28–R32; untested wording except where noted) ---
 
-  def contributorId(reason: IdError): String = reason match
+  /** T09 note: wrapped with the `invalid contributor id: ` prefix (tests 03/25 — test 25 pins the
+    * exact pattern `^snap: invalid contributor id: .+$`) regardless of call site (repository author
+    * decode, `snap config`, or a configuration-file read) — one rendering for [[IdError]]
+    * everywhere (D5's "one message catalog").
+    */
+  def contributorId(reason: IdError): String =
+    s"invalid contributor id: ${contributorIdReason(reason)}"
+
+  private def contributorIdReason(reason: IdError): String = reason match
     case IdError.TooLong            => s"contributor id exceeds ${ContributorId.MaxBytes} bytes"
     case IdError.ForbiddenCharacter => "contributor id contains a forbidden character"
     case IdError.AtCount            => "contributor id must contain exactly one '@'"
@@ -441,3 +508,31 @@ object Messages:
   def cannotReadRepository(detail: String): String = s"cannot read repository: $detail"
 
   def cannotWriteRepository(detail: String): String = s"cannot write repository: $detail"
+
+  // --- T09 additions: init + config (SPEC §7.1, §7.2, §8) ---
+
+  /** Pinned substring `repository already exists` (test 02). */
+  def repositoryAlreadyExists(path: String): String = s"repository already exists: $path"
+
+  /** Pinned substring `cannot initialize inside repository` (test 02). */
+  def cannotInitializeInsideRepository(existingRoot: String): String =
+    s"cannot initialize inside repository: $existingRoot"
+
+  def cannotCreateDirectory(detail: String): String = s"cannot create directory: $detail"
+
+  val configNotObject: String = "config is not a JSON object"
+
+  /** Kept in the `invalid JSON` diagnostic class, mirroring [[repositoryNotUtf8]]. */
+  val configNotUtf8: String = "invalid JSON: config file is not valid UTF-8"
+
+  def cannotReadConfig(detail: String): String = s"cannot read config: $detail"
+
+  def cannotWriteConfig(detail: String): String = s"cannot write config: $detail"
+
+  /** Pinned verbatim (test 19, R100). */
+  val contributorIdRequired: String = "contributor.id is required; configure it locally or globally"
+
+  /** Untested wording (T09 decision — see task notes): a `--global` write has nowhere to go without
+    * `HOME`, unlike the read side where a missing `HOME` is simply "no value" (R99).
+    */
+  val globalConfigUnavailable: String = "global configuration is unavailable: HOME is not set"
