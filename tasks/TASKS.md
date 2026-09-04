@@ -8,7 +8,7 @@ the **only** place status lives.
 |---|---|---|---|---|---|---|
 | T01 | 1 | Scala workspace skeleton & lint gate | 2 | done | — | 297bb98 |
 | T02 | 1 | Strict JSON layer & canonical writer | 3 | done | T01 | 81430ea |
-| T03 | 1 | Version algebra (compare/join/snap order) | 3 | done | T01 | |
+| T03 | 1 | Version algebra (compare/join/snap order) | 3 | done | T01 | 4b70529 |
 | T04 | 1 | Paths, Utf8Order, trees | 2 | in-progress | T01 | |
 | T05 | 1 | Text tokens, edit scripts, canonical diff | 3 | in-progress | T01 | |
 | T06 | 1 | Repository model, codec, structural validation | 3 | todo | T02,T03,T04 | |
