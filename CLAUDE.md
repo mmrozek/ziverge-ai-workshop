@@ -97,7 +97,11 @@ overrides agent frontmatter). Revised again by the user 2026-09-04 ("i dont want
 use fable at all, i need to make things faster") — supersedes the earlier "keep only
 risky tasks as fable" revision:
 
-- **Fable: never.** No task tier maps to it — not even Risk-core work.
+- **Fable: never by default** — no task tier maps to it, not even Risk-core work. Only on
+  an explicit per-task user request, exactly like Opus below. Standing exception granted
+  by the user 2026-09-04: **T17 (`merge` command) is implemented by a fable implementer**
+  ("use fable for t17 - it is crucial task"). The exception is per task and does not
+  extend to T17's reviewer or to later tasks.
 - **Sonnet (default):** everything — implementers of any risk/SP (including Risk-core),
   pre-commit task reviewers, phase reviews, integration verification runs, spec
   analysis / plan work.
