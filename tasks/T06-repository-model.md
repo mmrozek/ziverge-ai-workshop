@@ -38,3 +38,7 @@ temp-file write (R105, gotcha 10) using the canonical writer. DESIGN §6, §7.
       are explicitly deferred to T07 (leave a typed hook, not a silent gap).
 
 ## Notes / decisions
+- **Pre-implementation pointers from `reviews/T03-review.md` triage (orchestrator):**
+  migrate T03's `Either[String, A]` reason-phrase seams into `SnapError`/`Messages`
+  (finding 1); wire the R32 AST codec onto `Version.toPairs`/`fromPairs` (finding 3);
+  route every JSON-decoded path through `SnapPath.parse` (finding 2 guard).
