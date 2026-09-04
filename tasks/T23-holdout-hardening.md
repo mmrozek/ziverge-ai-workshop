@@ -40,3 +40,34 @@ tests in `snap/scala/src/test/scala/`. No new modules.
   against a measured suite timeout; re-measure after T16's engine landed.
 - CR12b: consolidate the four hand-copied byte-equality/hash helpers into one
   `snap.core` utility (Replay/WorkingChanges/Tree/Patch).
+
+## Pre-implementation pointers (phase-2 review triage)
+- Finding 3: `Grammar.diffRule`/`configRule`/`initRule` each mirror, rather than share,
+  the corresponding handler's own coarse operand check (`CommandsDiff.handler`'s match,
+  `CommandsConfig.parseOperands`, `CommandsInit.parsePath`). All three pairs agree on
+  every input today (reviewer traced them case by case), but the handler-side checks are
+  now unreachable through `Cli.run`, so a one-sided edit would silently change which path
+  decides an outcome with no compiler or test signal. Consolidate to one source of truth
+  per command, or leave the handler check and delete the duplicate — either way, one
+  place.
+- New, found while applying the phase-2 fixes (same class as finding 1, different second
+  source of truth): `CommandsCommit`'s defensive `Repo.validateFully(next)` result is also
+  discarded without comparison. Commit installs nothing, so there is no installed tree to
+  compare against — but the natural target is `working`, the tree `WorkTree.scan` read
+  from disk. If `buildChanges`/`Diff`/`EditScript` ever failed to reproduce the working
+  tree exactly, `repository.json` would describe a current tree that does not match what
+  is on disk and commit would never notice. Decide whether to add the comparison (mirror
+  `CommandsRevert.requireReplayMatchesInstalled`) or to document why it cannot diverge.
+- The repo's **first** `scalafix:ok` suppression now exists, in
+  `CommandsRevert.scala` (`DisableSyntax.throw`, for the deliberate exit-2 internal-error
+  raise). Its justification lives in the doc comment above the function because scalafix
+  rejects trailing prose on the suppression line. T23's acceptance criterion "no
+  suppressed scalafix rules without a justifying comment" should confirm this one reads
+  as intended, and that no others have crept in.
+- Holdout exposure 3: `revert`'s invalid-version-syntax wording. Tests 19/25 pin the
+  `invalid version:` class for `diff`'s operands; a holdout asserting the same class for
+  `revert` would currently find different wording. Align them unless the spec
+  distinguishes.
+- Holdout exposure 4: a **pure-text** full-file deletion through `DiffRender` (a
+  multi-line text file deleted, with no binary content anywhere in the case) is untested
+  at the integration level — traced correct by hand, never exercised. Add the golden.

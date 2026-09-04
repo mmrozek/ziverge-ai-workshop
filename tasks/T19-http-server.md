@@ -34,3 +34,14 @@ exit 0 via `sun.misc.Signal`.
       line is written and flushed before the accept loop starts (no buffering).
 
 ## Notes / decisions
+
+## Pointer for this task's review (phase-2 review triage, holdout exposure 2)
+- `snap --serve badport` in a **non-repository** directory currently reports
+  `snap: not a Snap repository`, not `snap: invalid port: badport`, because repository
+  discovery runs before `CommandsServe`'s port-*value* check. Both provided tests (14, 24)
+  run `--serve` inside a valid repository, so neither discriminates. Phase-1 finding CR7
+  established that argument validation precedes filesystem IO, and a port value is pure
+  argument validation — which suggests the value check belongs ahead of discovery. T13
+  chose the current order by analogy to D10. **T19's reviewer rules on this**; if it moves
+  ahead of discovery, `Grammar`'s `--serve` rule is the natural home and the change is
+  behavior-visible only in a non-repository directory.

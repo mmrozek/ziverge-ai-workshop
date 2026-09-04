@@ -78,16 +78,26 @@ object Grammar:
     case _   => invalidCommand
 
   /** `snap commit <message>` / `snap revert <version>` / `snap merge <repository>` (SPEC
-    * §7.5/§7.7/§7.8): exactly one operand, no options at all — none of these three commands define
-    * any option syntax, so a value that happens to start with `--` is legal free text (a commit
-    * message may contain anything R48 allows; a version/repository operand is simply rejected by
-    * its own parser if malformed), never an "unknown option". `merge`'s arity comes straight from
-    * SPEC §7.8; its semantics are T17's, not this rule's.
+    * §7.5/§7.7/§7.8): exactly one operand, no options at all. A `--`-prefixed operand is treated as
+    * an unknown option, matching [[initRule]] — NOT free text, even though none of these three
+    * commands defines any option syntax of its own. `merge`'s arity comes straight from SPEC §7.8;
+    * its semantics are T17's, not this rule's.
+    *
+    * Ambiguity resolution (orchestrator, 2026-09-05, phase-2 review finding #2 — see
+    * `tasks/T13-cli-grammar.md` Notes / decisions for the full record): SPEC §7's shared preamble
+    * ("Unknown options... are errors") is unqualified and applies to every command, and test
+    * `24-cli-grammar-matrix.yaml`'s `init --unknown` case additionally asserts `path_not_exists:
+    * --unknown` — i.e. a `--`-shaped token must never be consumed as a free-text operand, even for
+    * a command whose only operand is free-form text. No provided test anywhere in `snap/tests/`
+    * uses a `--`-prefixed free-text operand for `commit`/`revert`/`merge`, so this reading cannot
+    * regress the suite. Accepted cost: a commit message or repository path that legitimately begins
+    * with `--` is no longer reachable from the CLI (the spec provides no `--` separator) — the same
+    * cost the contract already accepts for `init`'s path operand.
     */
   private def oneFreeTextOperandRule(operands: List[String]): Either[SnapError, Unit] =
     operands match
-      case _ :: Nil => ok
-      case _        => invalidCommand
+      case value :: Nil if !value.startsWith("--") => ok
+      case _                                       => invalidCommand
 
   /** `snap diff [<old> <new> [--repo <repository>]]` (SPEC §7.6): the three documented shapes.
     * Mirrors [[CommandsDiff]]'s own match exactly, but returns [[SnapError.DiffUsage]] instead of
@@ -100,14 +110,17 @@ object Grammar:
     case _ :: _ :: "--repo" :: _ :: Nil => ok
     case _                              => Left(SnapError.DiffUsage)
 
-  /** `snap --serve [port]` (SPEC §7.9): at most one operand, no options. The operand's actual port
-    * *value* (D9: canonical decimal 0–65535) is [[CommandsServe]]'s job, evaluated only after this
-    * shape check passes.
+  /** `snap --serve [port]` (SPEC §7.9): at most one operand, no options. A `--`-prefixed operand is
+    * an unknown-option grammar error, matching [[initRule]]/[[oneFreeTextOperandRule]] (phase-2
+    * review finding #2 — see [[oneFreeTextOperandRule]]'s doc comment for the full rationale). The
+    * operand's actual port *value* (D9: canonical decimal 0–65535) is [[CommandsServe]]'s job,
+    * evaluated only after this shape check passes — so [[CommandsServe.parsePort]] never sees a
+    * `--`-prefixed argument through [[Cli.run]].
     */
   private def serveRule(operands: List[String]): Either[SnapError, Unit] = operands match
-    case Nil      => ok
-    case _ :: Nil => ok
-    case _        => invalidCommand
+    case Nil                                   => ok
+    case port :: Nil if !port.startsWith("--") => ok
+    case _                                     => invalidCommand
 
   /** One entry per [[Command]] case — total, so [[check]] can index it directly. */
   val rules: Map[Command, Rule] = Map(

@@ -1,6 +1,8 @@
 package snap.cli
 
 import snap.core.Ord
+import snap.core.SnapPath
+import snap.core.Tree
 import snap.fs.Store
 
 import java.nio.charset.StandardCharsets
@@ -204,4 +206,53 @@ class CommandsRevertSuite extends munit.FunSuite:
       run(root, "revert", "()", "extra"),
       (1, "", "snap: invalid command or arguments\n")
     )
+  }
+
+  // ------------------------------------------------- requireReplayMatchesInstalled (review #1)
+
+  // reviews/phase-2-review.md finding #1: the defensive `Repo.validateFully(next)` gate must
+  // compare its own result against `targetTree` (the tree `Materialize.install` actually writes to
+  // disk), not just discard it. This is genuinely unreachable through any public API today (§6.2
+  // rule 1 makes the two computations provably equal for a serial revert append on an
+  // already-integrated frontier — see the doc comment on `requireReplayMatchesInstalled`), so these
+  // tests drive the comparison helper directly rather than contriving an impossible end-to-end
+  // divergence.
+  private def path(value: String): SnapPath = SnapPath.parse(value).toOption.get
+  private def bytes(text: String): IArray[Byte] =
+    IArray.unsafeFromArray(text.getBytes(StandardCharsets.UTF_8))
+
+  test("requireReplayMatchesInstalled: equal trees are a silent no-op") {
+    val tree = Tree.from(Vector(path("f") -> bytes("content")))
+    CommandsRevert.requireReplayMatchesInstalled(tree, tree)
+  }
+
+  test(
+    "requireReplayMatchesInstalled: structurally equal trees built independently are still a " +
+      "no-op (Tree equality is by content, not identity)"
+  ) {
+    val a = Tree.from(Vector(path("f") -> bytes("content")))
+    val b = Tree.from(Vector(path("f") -> bytes("content")))
+    CommandsRevert.requireReplayMatchesInstalled(a, b)
+  }
+
+  test(
+    "requireReplayMatchesInstalled: a mismatch throws (never a SnapError/Left) — the sole " +
+      "sanctioned route to D4's exit-2 top-level catch-all, not a normal exit-1 diagnostic"
+  ) {
+    val replayed = Tree.from(Vector(path("f") -> bytes("replayed")))
+    val installed = Tree.from(Vector(path("f") -> bytes("installed")))
+    intercept[IllegalStateException] {
+      CommandsRevert.requireReplayMatchesInstalled(replayed, installed)
+    }
+  }
+
+  test(
+    "requireReplayMatchesInstalled: a target-only path (missing from the replay) is also a " +
+      "mismatch, not just differing content"
+  ) {
+    val replayed = Tree.empty
+    val installed = Tree.from(Vector(path("f") -> bytes("installed")))
+    intercept[IllegalStateException] {
+      CommandsRevert.requireReplayMatchesInstalled(replayed, installed)
+    }
   }

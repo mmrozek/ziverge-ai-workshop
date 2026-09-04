@@ -89,6 +89,29 @@ T19; grammar and port parsing land now). DESIGN §8.
   rendering — no existing entries reordered/reworded), plus tests: new `GrammarSuite.scala`, new
   `CommandsServeSuite.scala`, additions to `CliSuite.scala` (CR7 negative-constraint tests + the
   `merge` fix above) and `CommandsInitSuite.scala` (CR14 regression test).
+- **Ambiguity resolution — `--`-prefixed single-operand reading, unified (phase-2 review finding #2,
+  orchestrator, 2026-09-05):** `oneFreeTextOperandRule` (shared by `commit`/`revert`/`merge`) and
+  `serveRule`'s port operand previously read a `--`-prefixed single operand as literal free text,
+  the opposite of `initRule`'s reading of the same underlying R79 question — recorded by the review
+  as an undocumented ambiguity decision (ground-rule-1 paper-trail gap), not a functional defect at
+  the time. Resolved in favor of the strict, uniform reading (now matching `initRule` everywhere):
+  a `--`-prefixed token in any operand position is an unknown-option grammar error, never consumed
+  as the command's own free-text value. Evidence: (1) SPEC §7's shared preamble is unqualified —
+  "Unknown options, extra operands, and missing option values are errors" — and applies to every
+  command, not just ones that document options; (2) `snap/tests/24-cli-grammar-matrix.yaml` pins
+  `init --unknown` → `invalid command or arguments` **and** separately asserts
+  `path_not_exists: --unknown`, i.e. the contract already requires that a `--`-shaped token is never
+  consumed as a free-text operand, even for a command whose only operand is free-form text; (3) no
+  provided test anywhere in `snap/tests/` exercises a `--`-prefixed free-text operand for `commit`,
+  `revert`, or `merge` (verified against the full suite), so the strict reading cannot regress it.
+  Accepted cost: a commit message or repository path legitimately beginning with `--` is no longer
+  reachable from the CLI (no `--` separator exists in the grammar) — the same cost the contract
+  already accepts for `init`'s path operand, so uniformity wins. `diff` is unaffected: it keeps its
+  own `DiffUsage` channel and shapes, unchanged by this resolution. Implementation:
+  `Grammar.scala`'s `oneFreeTextOperandRule` and `serveRule`; `GrammarSuite.scala`'s prior case
+  asserting the old permissive reading (`"commit: a '--'-shaped message is free text..."`) was
+  replaced, not left alongside the new one, plus new cases for `revert`/`merge`/`--serve` and
+  preservation cases (a lone `-`, and a value merely containing `--` not as a prefix).
 
 ## Pre-implementation pointers (phase-1 review triage)
 - CR7: grammar/arity validation MUST run before repository discovery for every command

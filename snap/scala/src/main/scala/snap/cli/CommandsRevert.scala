@@ -55,9 +55,14 @@ object CommandsRevert:
       patch <- Patch.make(author, revision, frontier, revertMessage(targetVersion), changes)
       result <- patch.result
       next = Repository(result, CommandsCommit.insertSorted(valid.repository.patches, patch))
-      // Defensive gate, mirroring CommandsCommit: the repository file never receives a value that
-      // would not read back valid.
-      _ <- Repo.validateFully(next)
+      // Defensive gate, mirroring CommandsCommit — but unlike commit, revert also installs a
+      // SEPARATELY-computed tree (`targetTree`, via `Replay.materialize` of the OLD structure up to
+      // the target version) onto disk below. So this gate additionally asserts that independently
+      // re-replaying `next` from scratch (the general concurrent-integration engine) reproduces
+      // that exact tree (reviews/phase-2-review.md finding #1) — the repository file must never
+      // describe a tree that differs from what is actually on disk.
+      validated <- Repo.validateFully(next)
+      _ = requireReplayMatchesInstalled(validated.tree, targetTree)
       _ <- Materialize.install(root, valid.tree, targetTree)
       _ <- Store.writeRepository(Commands.repositoryFile(root), next)
     yield result.canonicalText + "\n"
@@ -87,3 +92,36 @@ object CommandsRevert:
     * always agree, and this is defensively immune to any future relaxation of that requirement.
     */
   private def revertMessage(target: Version): String = s"revert to ${target.canonicalText}"
+
+  /** Internal invariant guard for the defensive gate above (reviews/phase-2-review.md finding #1):
+    * `replayedTree` — the tree obtained by fully re-replaying the new repository from scratch, via
+    * the general concurrent-integration engine ([[Repo.validateFully]]) — must equal `targetTree`,
+    * the tree computed by a DIFFERENT mechanism ([[Replay.materialize]] of the OLD structure up to
+    * the target version) and about to be (or already) installed onto disk by
+    * [[Materialize.install]].
+    *
+    * CONFIRMED not reachable today: a revert patch is a serial append on an
+    * already-fully-integrated frontier (no concurrency), so §6.2 rule 1 makes the two computations
+    * provably equal. This exists purely to catch a future divergence between the two paths — which
+    * would otherwise mean `repository.json` commits to a value whose own replay produces a tree
+    * different from what is actually on disk (exactly the R103/R106 "metadata claims a tree that
+    * was never written" scenario).
+    *
+    * That is an internal invariant violation, not a user-facing error, so per D4/R107 it is routed
+    * to `Main`'s top-level catch-all (exit 2) by raising here — never as a normal
+    * `Left(SnapError...)` (which would incorrectly surface as an exit-1 diagnostic a user could
+    * trigger) and never with a new ad-hoc message wording a provided test could collide with
+    * (`Main.run` wraps whatever message is here in the existing, already-tested
+    * `snap: internal error: <detail>` line). This is the one sanctioned way domain code reaches
+    * that channel — nothing between here and `Main` catches `Throwable`, so this is not
+    * `try`/`catch`-as-control-flow.
+    */
+  private[cli] def requireReplayMatchesInstalled(replayedTree: Tree, targetTree: Tree): Unit =
+    if replayedTree != targetTree then
+      // Sole sanctioned route to D4's exit-2 top-level catch-all (Main.run) for an internal
+      // invariant violation; see the doc comment above. SnapError/Either stays reserved for
+      // user-facing, exit-1 outcomes.
+      throw new IllegalStateException( // scalafix:ok DisableSyntax.throw
+        "revert: replayed repository tree does not match the tree installed to disk " +
+          "(internal invariant violation, reviews/phase-2-review.md finding #1)"
+      )

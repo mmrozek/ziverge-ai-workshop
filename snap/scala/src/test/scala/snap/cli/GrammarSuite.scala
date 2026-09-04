@@ -75,10 +75,25 @@ class GrammarSuite extends munit.FunSuite:
     invalid("commit: missing operand", Command.Commit, Nil),
     invalid("commit: extra operand", Command.Commit, List("message", "extra")),
     valid("commit: one operand", Command.Commit, List("message")),
-    valid(
-      "commit: a '--'-shaped message is free text, not an unknown option (commit has no options)",
+    // Phase-2 review finding #2 (Design drift, upgraded to a behavior change by the orchestrator,
+    // 2026-09-05): a `--`-shaped operand is now an unknown-option grammar error, uniformly with
+    // `initRule`, NOT free text — see `oneFreeTextOperandRule`'s doc comment and T13's Notes /
+    // decisions for the full ambiguity-resolution record. This replaces the prior "commit: a
+    // '--'-shaped message is free text" case, which asserted the opposite (now-rejected) reading.
+    invalid(
+      "commit: a '--'-prefixed operand is an unknown-option grammar error, not free text",
       Command.Commit,
       List("--not-an-option")
+    ),
+    valid(
+      "commit: a lone '-' operand is unaffected (only a LEADING '--' triggers the grammar error)",
+      Command.Commit,
+      List("-")
+    ),
+    valid(
+      "commit: a message merely CONTAINING '--' (not as a prefix) is unaffected free text",
+      Command.Commit,
+      List("has--in-the-middle")
     ),
 
     // --- diff (SPEC §7.6): the other command with real options ---
@@ -95,18 +110,53 @@ class GrammarSuite extends munit.FunSuite:
     invalid("revert: missing operand", Command.Revert, Nil),
     invalid("revert: extra operand", Command.Revert, List("()", "extra")),
     valid("revert: one operand", Command.Revert, List("()")),
+    // Phase-2 review finding #2 (see the commit rows above and T13's Notes / decisions).
+    invalid(
+      "revert: a '--'-prefixed operand is an unknown-option grammar error, not free text",
+      Command.Revert,
+      List("--unknown")
+    ),
+    valid(
+      "revert: a lone '-' operand is unaffected",
+      Command.Revert,
+      List("-")
+    ),
 
     // --- merge (SPEC §7.8): exactly one free-text operand, no options (arity-only here — T17
     // owns the semantics; this rule never changes when that handler replaces the stub) ---
     invalid("merge: missing operand", Command.Merge, Nil),
     invalid("merge: extra operand", Command.Merge, List("repo", "extra")),
     valid("merge: one operand", Command.Merge, List("repo")),
+    // Phase-2 review finding #2 (see the commit rows above and T13's Notes / decisions).
+    invalid(
+      "merge: a '--'-prefixed operand is an unknown-option grammar error, not free text",
+      Command.Merge,
+      List("--unknown")
+    ),
+    valid(
+      "merge: a lone '-' operand is unaffected",
+      Command.Merge,
+      List("-")
+    ),
 
     // --- --serve (SPEC §7.9): 0 or 1 operand, no options; the port *value* is CommandsServe's
     // job, not Grammar's ---
     invalid("--serve: extra operand", Command.Serve, List("0", "extra")),
     valid("--serve: no operand (default port)", Command.Serve, Nil),
-    valid("--serve: one operand", Command.Serve, List("0"))
+    valid("--serve: one operand", Command.Serve, List("0")),
+    // Phase-2 review finding #2 (see the commit rows above and T13's Notes / decisions): applies
+    // to --serve's port operand too, matching initRule.
+    invalid(
+      "--serve: a '--'-prefixed port operand is an unknown-option grammar error",
+      Command.Serve,
+      List("--unknown")
+    ),
+    valid(
+      "--serve: a lone '-' port operand is unaffected (still reaches CommandsServe.parsePort, " +
+        "which rejects it on its own terms)",
+      Command.Serve,
+      List("-")
+    )
   )
 
   cases.foreach { c =>
