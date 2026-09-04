@@ -19,7 +19,7 @@ the **only** place status lives.
 | T11 | 2 | diff command & rendering | 3 | done | T10 | 20f3896 |
 | T12 | 2 | Filesystem install & revert | 2 | done | T11 | 13168f9 |
 | T13 | 2 | CLI grammar matrix & port validation | 2 | in-progress | T12 | |
-| T14 | 2 | Validation matrices & error catalog completion | 3 | in-progress | T12 | |
+| T14 | 2 | Validation matrices & error catalog completion | 3 | done | T12 | 6daa92d |
 | T15 | 3 | OT transform | 3 | done | T05 | acfb222 |
 | T16 | 3 | Concurrent replay: namespace, path rules, warnings | 5 | done | T07,T15 | 071639e |
 | T17 | 3 | merge command | 3 | in-progress | T12,T16 | |
