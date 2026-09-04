@@ -222,7 +222,7 @@ task that implements them (holdout assumption — implemented and unit-tested, n
 | Diff tie-break divergence silently corrupts merges | T05 implements the literal DP (D18); golden + property tests; core review |
 | Replay pipeline rule-ordering errors (snap order direction, namespace-before-path-rules, aggregate Q, Q-insert priority, warning subtraction) | isolated in T07/T15/T16/T17 with per-rule unit tests + permutation property tests (T18); each is a core pre-commit review |
 | Byte-stable surfaces (canonical JSON, diff rendering, log escaping, ANSI layouts) | one canonical serializer (D7); goldens lifted from the YAML tests; test 28 bytes in T22 |
-| Strict JSON traps (duplicate keys, 2^53 from text) | jackson-core tokenizer under our AST builder, which owns duplicate detection, raw number text, and pinned messages (D2, §6); test 23/25 matrices in T14 |
+| Strict JSON traps (duplicate keys, 2^53 from text) | jawn-parser with a custom Facade building our AST — duplicate detection, raw number text, and pinned messages are ours (D2, §6); test 23/25 matrices in T14 |
 | JVM/harness realities (signals→exit 0, UTF-8 under LC_ALL=C, startup budget, HEAD bytes) | D20–D22 decided up front; T19/T22 acceptance criteria name them; thin Main (gotcha 9) |
 | Phase 1 breadth delays first green tests | T02–T05 are parallel-safe (disjoint files); board tracks per-task status |
 
@@ -234,3 +234,7 @@ task that implements them (holdout assumption — implemented and unit-tested, n
   problems"): jackson-core adopted as the JSON tokenizer beneath our strict AST/
   validation/canonical writer (DESIGN §6); HTTP and CLI stay JDK/hand-rolled with
   rationale recorded in D2. T01/T02 acceptance criteria updated accordingly.
+- 2026-09-04 — D2 refined on user direction ("prefer Scala libraries"): jackson-core →
+  **jawn-parser** (Typelevel, Scala) — its custom-Facade design hands over raw number
+  text and per-key callbacks natively, a strictly better fit. Scala-first recorded as
+  the standing rule in D2, with the JDK-HTTP/hand-rolled-CLI exceptions justified.

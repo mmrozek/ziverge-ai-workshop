@@ -31,6 +31,6 @@ prints `snap: not implemented` to stderr and exits 1. After this task,
       noWhileLoops, OrganizeImports, RemoveUnused with `-Wunused:all`).
 - [ ] munit + scalacheck available in test scope only (D3); `sbt test` runs the smoke
       test; runtime dependencies in the assembly are exactly those listed in DESIGN D2
-      (jackson-core), nothing else.
+      (jawn-parser), nothing else.
 
 ## Notes / decisions

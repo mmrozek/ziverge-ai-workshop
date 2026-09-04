@@ -136,17 +136,19 @@ same base token count; trailing insertions processed; output coalesced.
 ## §6 Strict JSON layer
 
 Layered: a battle-tested tokenizer underneath, our contract semantics on top (D2).
-**jackson-core** (streaming tokenizer only — no databind, no reflection) handles RFC 8259
-lexing: string unescaping incl. surrogate pairs, number grammar, malformed input. On top
-of the token stream we own everything the contract pins:
+**jawn-parser** (Typelevel, Scala — the parser under circe; no AST/derivation baggage)
+handles RFC 8259 lexing: string unescaping incl. surrogate pairs, number grammar,
+malformed input. jawn parses through a caller-supplied `Facade`, which is exactly our
+seam — the facade builds our `Json` AST directly and we own everything the contract pins:
 
-- **AST builder**: consumes Jackson tokens into our `Json` AST; object keys checked for
-  uniqueness in the builder (`duplicate JSON key <k>` — R41; we own the message and the
-  key name, no exception-message scraping); numbers keep their **raw decimal text**
-  (`JsonParser.getText`). Typed decoding rejects any number that is not an integer in
-  `[-(2^53-1), 2^53-1]` **judged from the text**, never via `Double` round-trip
-  (`9007199254740992` must be rejected — gotcha 4). Any Jackson parse error maps to the
-  `invalid JSON` diagnostic class (tests pin it as a substring).
+- **Facade/AST builder**: object contexts receive each key as it arrives — uniqueness
+  checked there (`duplicate JSON key <k>` — R41; we own the message and the key name, no
+  exception-message scraping); numbers arrive as **raw decimal text**
+  (`jnum(s, decIndex, expIndex)`) and the AST keeps that text. Typed decoding rejects
+  any number that is not an integer in `[-(2^53-1), 2^53-1]` **judged from the text**,
+  never via `Double` round-trip (`9007199254740992` must be rejected — gotcha 4). Any
+  jawn parse error maps to the `invalid JSON` diagnostic class (tests pin it as a
+  substring).
 - **Typed decode** (`RepoCodec`, `ConfigCodec`): exact schemas; unknown fields are errors
   naming the field (R43, test 23 `snap: repository has unknown field: unknown`); every
   string validated by the core factories.
@@ -214,7 +216,7 @@ of the token stream we own everything the contract pins:
 | # | Decision | Choice | Rationale / ref |
 |---|---|---|---|
 | D1 | Language / toolchain | Scala 3.3 LTS, sbt, sbt-assembly fat jar, Java 17 | user decision; runner layout SPEC-NOTES §3.1 |
-| D2 | Runtime dependencies | JDK-first; adopt a library where it solves a commodity subproblem without obscuring contract-pinned behavior (user, 2026-09-04). Adopted: **jackson-core** (JSON tokenizer only — §6). HTTP stays JDK (`java.net.http`, `com.sun.net.httpserver` — adequate and standard). CLI parsing stays hand-rolled (every grammar error string is test-pinned). | user direction; §6; each new runtime dep = new row here |
+| D2 | Runtime dependencies | **Scala-first** (user, 2026-09-04): prefer Scala libraries for commodity subproblems when they don't obscure contract-pinned behavior. Adopted: **jawn-parser** (Typelevel) as the JSON tokenizer under our AST (§6). Explicit exceptions, each with a reason: HTTP stays JDK (`java.net.http`, `com.sun.net.httpserver`) — Scala HTTP stacks (http4s, zio-http) bring an effect runtime, disproportionate for one GET + a two-route snapshot server under the startup budget (gotcha 9); CLI parsing hand-rolled — every grammar error string is test-pinned; signals via `sun.misc.Signal` — no alternative. | user direction; §6; each new runtime dep = new row here |
 | D3 | Test dependencies | munit + scalacheck (test scope only) | property tests are mandatory (R109, CLAUDE.md); excluded from assembly |
 | D4 | Error strategy | `SnapError` ADT + `Either`; no exceptions for control flow; exit 2 = top-level catch-all only | conventions; R107 |
 | D5 | Error message catalog | every test-pinned string verbatim in `Errors.scala`; untested → `snap: <detail>` | Q1 |

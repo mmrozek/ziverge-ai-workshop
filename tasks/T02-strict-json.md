@@ -8,10 +8,10 @@ Note: live status is NOT kept here — `TASKS.md` is the single source of truth 
 status. Task files hold the definition (stable) and the notes (append-only).
 
 ## What
-`snap/json/`: JSON AST + strict parsing layered on the **jackson-core streaming
-tokenizer** (D2 — tokenizer only, no databind): our AST builder consumes the token
-stream, errors on duplicate object keys naming the key, and keeps raw decimal number
-text (integer-ness and the ±(2^53−1) bound judged from text, never via Double); Jackson
+`snap/json/`: JSON AST + strict parsing layered on **jawn-parser** (D2 — Typelevel
+Scala tokenizer, parsing through our custom `Facade`): the facade builds our AST,
+errors on duplicate object keys naming the key, and keeps raw decimal number text
+(integer-ness and the ±(2^53−1) bound judged from text, never via Double); jawn
 parse errors map to the `invalid JSON` diagnostic class. Plus the canonical writer
 (ours, 2-space indent, every array element on its own line, trailing LF — the exact
 style test 12 byte-pins). Also `core/Errors.scala` seeded with the `SnapError` ADT and
