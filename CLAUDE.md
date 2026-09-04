@@ -40,6 +40,11 @@ This file defines **how** work happens here; `README.md` describes the layout.
    task dependencies are met — but a phase only *closes* once its review findings are
    triaged and accepted fixes are committed; conflicting review fixes take precedence
    over in-flight work. The only hard user-approval gate is the initial plan.
+   **Phase-5 exception (user, 2026-09-05):** phase 5 (T22, T23) gets **no** gate review —
+   "the final review will be enough". Its work therefore goes straight to the
+   post-completion audit, which must absorb what that gate would have done: the
+   `scala-antipatterns` run over the final tree, the full-suite + lint gate, and a triage
+   pass over T22/T23 findings. Phases 1–4 keep their gates.
 7. **Everything is tracked.** Plans, task files, reviews, agent/skill definitions — all
    committed to this repo. Don't keep state only in conversation.
 

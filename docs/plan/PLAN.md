@@ -259,6 +259,12 @@ task that implements them (holdout assumption — implemented and unit-tested, n
   16 and 26 by T20's remote operands. None of these tasks is therefore redundant: under
   the standing holdout assumption their value is the coverage and audit work, and the
   scope in each task file stands unchanged.
+- 2026-09-05 — user directive: **the phase-5 gate review is skipped** ("phase 5 gate can
+  be skipped. The final review will be enough"). T22 and T23 land with task-level
+  verification only, and the post-completion audit absorbs the gate's duties — the
+  `scala-antipatterns` audit over the final tree, the full-suite and lint gate, and a
+  triage pass over anything the audit raises in phase-5 code. Phases 1–4 keep their
+  gates; phase 3 and phase 4 reviews still run.
 - 2026-09-05 — **no plan-structure change, recorded for traceability:** the provided
   suite reached 28/28 across two un-integrated worktrees (T20 at 27/28, T22 at 25/28)
   before either landed on `main`. The remaining work is integration, the phase-3/4/5
