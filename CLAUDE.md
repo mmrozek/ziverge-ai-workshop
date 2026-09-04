@@ -98,9 +98,11 @@ as fable"):
 
 - **Fable (explicit `model: "fable"`):** ONLY Risk-core tasks (clock compare / merge /
   tie-break logic) — their implementers AND their pre-commit task reviewers.
-- **Opus:** phase reviews, the post-completion audit, spec analysis / plan authoring if
-  redone.
-- **Sonnet:** all normal-risk implementers (any SP), integration verification runs.
+- **Opus:** the post-completion audit only (final hard gate); spec analysis / plan
+  authoring if redone.
+- **Sonnet:** all normal-risk implementers (any SP), integration verification runs,
+  and **phase reviews from phase 2 onward** (user, 2026-09-04: "phase review is too
+  expensive" — phase 1's ran on opus before the change).
 - **Haiku:** pure scans/greps.
 - The orchestrator session itself runs on a faster model (user switches via `/model`);
   since spawns now always pass an explicit `model`, the session model never leaks into
