@@ -12,10 +12,10 @@ the **only** place status lives.
 | T04 | 1 | Paths, Utf8Order, trees | 2 | done | T01 | 30d9e75 |
 | T05 | 1 | Text tokens, edit scripts, canonical diff | 3 | done | T01 | e348367 |
 | T06 | 1 | Repository model, codec, structural validation | 3 | done | T02,T03,T04 | ae85906 |
-| T07 | 1 | Replay ready-loop, materialization, validation 5–6 | 3 | done | T05,T06 | |
+| T07 | 1 | Replay ready-loop, materialization, validation 5–6 | 3 | done | T05,T06 | 025238e |
 | T08 | 1 | CLI dispatch, discovery, plain output, exit codes | 2 | done | T02 | 6e46415 |
 | T09 | 1 | init + config | 2 | done | T06,T08 | 0fc896d |
-| T10 | 1 | Worktree scanner, status, commit, log | 3 | todo | T07,T09 | |
+| T10 | 1 | Worktree scanner, status, commit, log | 3 | in-progress | T07,T09 | |
 | T11 | 2 | diff command & rendering | 3 | todo | T10 | |
 | T12 | 2 | Filesystem install & revert | 2 | todo | T11 | |
 | T13 | 2 | CLI grammar matrix & port validation | 2 | todo | T12 | |
