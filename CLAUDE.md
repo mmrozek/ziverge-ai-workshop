@@ -105,8 +105,9 @@ risky tasks as fable" revision:
 - **Sonnet (default):** everything — implementers of any risk/SP (including Risk-core),
   pre-commit task reviewers, phase reviews, integration verification runs, spec
   analysis / plan work.
-- **Opus:** only on an explicit per-task user request (candidate: the post-completion
-  audit — ask first).
+- **Opus:** only on an explicit per-task user request. **Granted by the user 2026-09-05
+  for the post-completion audit** ("use opus for the post-completion audit") — that audit
+  runs on Opus; no other task inherits the grant.
 - **Haiku:** pure scans/greps.
 - The orchestrator session itself runs on a faster model (user switches via `/model` —
   Sonnet unless they say otherwise); since spawns always pass an explicit `model`, the
