@@ -1,0 +1,31 @@
+package snap.cli
+
+/** Output seam (DESIGN §8, R92–R97): every command result or error funnels through here, so T22's
+  * terminal renderer can be selected per stream without any call site changing. Presentation never
+  * influences execution, effects, warning selection/order, or exit status (R92) — [[Cli]] alone
+  * decides those; a `Presentation` only turns already-decided outcomes into bytes.
+  */
+trait Presentation:
+
+  /** A successful command's stdout text, already fully formatted (including any trailing LF). Empty
+    * text prints nothing — several commands succeed silently (e.g. `config`, spec §7.2).
+    */
+  def result(env: Env, text: String): Unit
+
+  /** An error detail, without the `snap: ` prefix (spec §10: plain errors are one line
+    * `snap: <detail>`).
+    */
+  def error(env: Env, detail: String): Unit
+
+object Presentation:
+
+  /** The byte-stable presentation (spec §7.11) — the only implementation until T22 adds `Terminal`.
+    * Every stream renders plain for now, regardless of `SNAP_COLOR`/`NO_COLOR`/TTY: T08 only
+    * validates `SNAP_COLOR`'s value (R95); actually selecting a renderer per stream is T22's job.
+    */
+  object Plain extends Presentation:
+    def result(env: Env, text: String): Unit =
+      if text.nonEmpty then env.stdout.print(text)
+
+    def error(env: Env, detail: String): Unit =
+      env.stderr.println(s"snap: $detail")

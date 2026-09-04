@@ -22,6 +22,29 @@ enum SnapError:
     */
   case DuplicateJsonKey(key: String)
 
+  /** No known command matched the first token, an operand didn't fit the command's shape, or a
+    * grammar rule (R79) was violated outside `diff`'s distinct usage channel (DESIGN §8; test 14/24
+    * pin `invalid command or arguments` verbatim). T08 seeds this with only the coarse checks it
+    * can make (unknown command, `--version` arity); the exhaustive per-command matrix is T13's.
+    */
+  case InvalidCommand
+
+  /** A command that resolves against the nearest repository (R77) found none walking from the
+    * process cwd to the filesystem root (test 14 pins this verbatim).
+    */
+  case NotASnapRepository
+
+  /** `SNAP_COLOR` set to something other than unset/`auto`/`always`/`never` (R95; test 28 pins this
+    * verbatim). The offending value is never echoed — the spec's wording is fixed regardless of
+    * what was set.
+    */
+  case InvalidSnapColor
+
+  /** A recognized command with no implementation yet (T08 stub, replaced command-by-command through
+    * T09–T21). Carries no detail: the wording matches T01's placeholder `Main.scala` verbatim.
+    */
+  case NotImplemented
+
   /** One-line diagnostic detail, without the `snap: ` prefix — the CLI layer (T08) prepends the
     * prefix when printing (spec §10 `snap: <detail>`).
     */
@@ -29,6 +52,10 @@ enum SnapError:
     case InvalidJson(Some(location)) => Messages.invalidJsonAt(location)
     case InvalidJson(None)           => Messages.invalidJsonTruncated
     case DuplicateJsonKey(key)       => Messages.duplicateJsonKey(key)
+    case InvalidCommand              => Messages.invalidCommand
+    case NotASnapRepository          => Messages.notASnapRepository
+    case InvalidSnapColor            => Messages.invalidSnapColor
+    case NotImplemented              => Messages.notImplemented
 
 /** Message catalog (DESIGN D5): every diagnostic string of the implementation lives here,
   * test-pinned ones verbatim. No other module builds diagnostic text.
@@ -47,3 +74,24 @@ object Messages:
 
   /** Truncated input has no failure position. */
   val invalidJsonTruncated: String = "invalid JSON: unexpected end of input"
+
+  /** Pinned verbatim (tests 14, 24): unknown command, extra operands, or any other grammar
+    * violation outside `diff`'s distinct usage channel (DESIGN §8).
+    */
+  val invalidCommand: String = "invalid command or arguments"
+
+  /** Pinned verbatim (test 14, R77). */
+  val notASnapRepository: String = "not a Snap repository"
+
+  /** Pinned verbatim (test 28, R95). */
+  val invalidSnapColor: String = "SNAP_COLOR must be auto, always, or never"
+
+  /** T08 stub text for every not-yet-implemented command; matches T01's placeholder `Main.scala`
+    * verbatim. Replaced command-by-command starting T09.
+    */
+  val notImplemented: String = "not implemented"
+
+  /** Exit-2 catch-all (R107, D4): built only by `Main`'s top-level exception handler from an
+    * unexpected `Throwable`'s message — domain code never produces this.
+    */
+  def internalError(detail: String): String = s"internal error: $detail"
