@@ -259,6 +259,15 @@ task that implements them (holdout assumption — implemented and unit-tested, n
   16 and 26 by T20's remote operands. None of these tasks is therefore redundant: under
   the standing holdout assumption their value is the coverage and audit work, and the
   scope in each task file stands unchanged.
+- 2026-09-05 — user directive: **the phase-3 and phase-4 gate reviews are skipped too**
+  ("i need to finish it quicker - skip phase 3 and 4 gate reviews. I want only final
+  one"). Only phases 1 and 2 were gated; everything from T15 onward reaches the
+  post-completion audit directly. Residual risk is uneven and worth stating: phase 3's
+  four tasks each had a formal pre-commit core review (T15, T16, T17, T18 — the last of
+  which caught a Major by mutation testing), so skipping its gate costs little. Phase 4
+  (T19, T20, T21) is `Risk: normal` throughout with no independent review of any kind, so
+  the audit is the first outside look at `--serve`, the HTTP client and the cross-repo
+  path — the audit brief carries a dedicated phase-4 lens to compensate.
 - 2026-09-05 — user directive: **the phase-5 gate review is skipped** ("phase 5 gate can
   be skipped. The final review will be enough"). T22 and T23 land with task-level
   verification only, and the post-completion audit absorbs the gate's duties — the
