@@ -339,6 +339,67 @@ class ConcurrentReplaySuite extends FunSuite:
 
   // --- sub-replay fallibility (reviews/T07-review.md nit 1): base materialization CAN fail ---
 
+  // --- sub-replay interposition (reviews/T16-review.md nit 1): a warning that only the SUB-REPLAY
+  // would raise must never leak into the frontier's warning set ---
+
+  test(
+    "reviews/T16-review.md nit 1: a warning raised only while materializing a patch's base is" +
+      " discarded, even when it differs from the outer walk's own resolution of the same paths"
+  ) {
+    // Shape (T16 review ruling 5): p1 and p2 are two same-path (`f`) concurrent branches off
+    // `seed` that also compose gamma's declared base (gamma's own change is elsewhere, at
+    // `gpath`) — but an UNRELATED third branch `d`, also concurrent at `f`, interposes between
+    // p1 and p2 in the OUTER ready order (author ids are chosen so Snap order integrates
+    // p1, then d, then p2 — see the review's own scenario). `d` is NOT part of gamma's base, so
+    // materializing gamma's base sub-replays only {seed, p1, p2}.
+    //
+    // Outer walk (direct integration, real global context):
+    //   p1 (B=C at "base\n") -> f = "base\nP1\n"
+    //   d  (delete; T absent regardless of B/C) -> rule 2 delete-wins; f removed
+    //   p2 (put; B present "base\n", C absent since d just removed f) -> rule 3 delete-wins
+    //   gamma integrates last, touching only "gpath"; f is untouched by it.
+    // Final: f absent, ONE warning (delete-wins, deduped from d's and p2's own resolutions).
+    //
+    // Sub-replay for gamma's base (only seed, p1, p2 — no d):
+    //   p1 -> f = "base\nP1\n" (present, since d's deletion never happens in this smaller context)
+    //   p2 (put; B present "base\n", C present "base\nP1\n", T="PUT\n" != C) -> rule 5
+    //   later-put-wins — a DIFFERENT reason than the outer walk's delete-wins, for the SAME p2.
+    // Discarding this sub-replay's warnings (Replay.scala's materializeMemo) is not merely
+    // avoiding a duplicate: folding it in would add a WRONG "f: later-put-wins" pair that does not
+    // correspond to the true global resolution (the review's point 5, sharpened).
+    val seed = patch("seed@x", 1L, Version.empty, textEdit("f", "", "base\n"))
+    val p1 = patch("zp1@x", 1L, v("seed@x" -> 1L), textEdit("f", "base\n", "base\nP1\n"))
+    val d = patch("mid@x", 1L, v("seed@x" -> 1L), del("f"))
+    val p2 = patch("ap2@x", 1L, v("seed@x" -> 1L), put("f", "PUT\n"))
+    val gamma = patch(
+      "gam@x",
+      1L,
+      v("ap2@x" -> 1L, "seed@x" -> 1L, "zp1@x" -> 1L),
+      textEdit("gpath", "", "g\n")
+    )
+    val frontier = v("ap2@x" -> 1L, "gam@x" -> 1L, "mid@x" -> 1L, "seed@x" -> 1L, "zp1@x" -> 1L)
+    val valid = validated(frontier, p2, gamma, d, seed, p1)
+
+    // Confirm the engineered outer integration order (p1, then d, then p2, then gamma) actually
+    // holds before trusting the result below.
+    assertEquals(
+      Replay.integrationOrder(valid, frontier),
+      Right(
+        Vector(
+          Dot(id("seed@x"), 1L),
+          Dot(id("zp1@x"), 1L),
+          Dot(id("mid@x"), 1L),
+          Dot(id("ap2@x"), 1L),
+          Dot(id("gam@x"), 1L)
+        )
+      )
+    )
+    assertEquals(
+      Replay.materialize(valid, frontier),
+      Right((tree("gpath" -> "g\n"), SortedSet(warn("f", WarningReason.DeleteWins))))
+    )
+  }
+
   test("a structurally valid history with a non-self-contained base fails with the pinned phrase") {
     // c1's base (a@x->2) selects a2 but not a2's own base component b@x->1: the sub-replay of
     // that base stalls (no ready patch) — `cyclic or incomplete patch history` (R60), even though

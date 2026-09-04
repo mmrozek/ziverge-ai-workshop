@@ -118,6 +118,19 @@ class OtSuite extends munit.ScalaCheckSuite:
     )
   }
 
+  test(
+    "reviews/T15-review.md finding 2: P insert row fires against a pending Q delete head"
+  ) {
+    // p = insert[x], retain 1 · q = delete 1. Row 2 (P insert) matches first (q's head is not an
+    // insert), consuming P only and emitting the insert unchanged; the residual retain(1)/delete(1)
+    // pair then cancels under row 5. Previously only reachable probabilistically through the
+    // generated properties (e.g. p = diff(["a\n"], ["b\n","a\n"]), q = diff(["a\n"], [])).
+    assertEquals(
+      Ot.transform(script(Insert(Vector("x\n")), Retain(1L)), script(Delete(1L))),
+      Right(script(Insert(Vector("x\n"))))
+    )
+  }
+
   test("survival: Q insert before a P delete — inserted text survives, base token dies") {
     // Script form of 22-ot-matrix.yaml "survive": base 0..4; P deletes "1\n"; Q inserts "B\n"
     // right before it. Deletion consumes only base tokens (R71).

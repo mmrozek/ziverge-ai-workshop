@@ -36,6 +36,25 @@ class DiffSuite extends munit.ScalaCheckSuite:
     )
   }
 
+  test(
+    "golden (reviews/T05-review.md finding 1): equality-before-tie on trailing repeated lines"
+  ) {
+    // R64 ("including for repeated equal lines"): rule 1 (equal tokens retain) is checked BEFORE
+    // the exhausted-side/tie rules, even when the equal token is the LAST of the shorter side. A
+    // future refactor toward a common-suffix-anchored or Myers-style walk could instead emit the
+    // delete/insert first here — every other project test (apply-roundtrip, validity,
+    // cost-minimality, determinism, even the test-05 golden) stays green under such a variant
+    // (reviews/T05-review.md finding 1), so this golden is the only guard against that regression.
+    assertEquals(
+      Diff.diff(Vector("a\n", "a\n"), Vector("a\n")),
+      EditScript(Vector(Retain(1L), Delete(1L)))
+    )
+    assertEquals(
+      Diff.diff(Vector("a\n"), Vector("a\n", "a\n")),
+      EditScript(Vector(Retain(1L), Insert(Vector("a\n"))))
+    )
+  }
+
   test("deletion-on-tie: at equal costs the walk deletes before inserting") {
     // D(1,0) == D(0,1) == 1 here; `<=` must pick delete, so delete precedes insert.
     assertEquals(

@@ -33,6 +33,53 @@ byte-identical across repeated runs. Fix whatever divergence the matrix tests ex
 
 ## Notes / decisions
 
+**First-half split (orchestrator, 2026-09-05):** T18's scope was split into two passes because
+T17's `merge` command was still being integrated/reviewed on `main` and was not available in this
+worktree's base. This entry covers only the CORE-level half:
+
+1. The four deferred review pointers below — all landed, all test-only:
+   - T05 finding 1: `snap/scala/src/test/scala/snap/core/DiffSuite.scala`, test
+     `"golden (reviews/T05-review.md finding 1): equality-before-tie on trailing repeated lines"` —
+     pins `diff([a\n,a\n],[a\n]) == [retain 1, delete 1]` and the symmetric insert case. Confirmed
+     the current implementation already produces exactly this (hand-traced, matching the T05
+     review's own independent probe) — no code change, additive golden only.
+   - T15 finding 2: `snap/scala/src/test/scala/snap/core/OtSuite.scala`, test
+     `"reviews/T15-review.md finding 2: P insert row fires against a pending Q delete head"` — a
+     directed case (`p = insert[x], retain 1`, `q = delete 1`) that was previously only
+     probabilistically reachable through the generated properties.
+   - T16 nit 1: `snap/scala/src/test/scala/snap/core/ConcurrentReplaySuite.scala`, test
+     `"reviews/T16-review.md nit 1: a warning raised only while materializing a patch's base is
+     discarded..."` — hand-built the exact interposition shape the review's ruling 5 constructed
+     (a same-path branch `d` integrates between same-path branches `p1`/`p2` in the OUTER ready
+     order, while `p1`/`p2` alone compose a third patch `gamma`'s declared base). Verified by hand
+     that the sub-replay used to materialize `gamma`'s base would independently resolve `p2` as
+     `later-put-wins`, a DIFFERENT reason than the outer walk's actual `delete-wins` — proving the
+     discard is load-bearing, not merely deduping. The test asserts the exact integration order
+     first (so the engineered shape is confirmed, not assumed) then the final `(tree, warnings)`.
+   - T16 nit 2: `snap/scala/src/test/scala/snap/core/ConcurrentReplayLawsSuite.scala` — replaced the
+     unverifiable scaladoc claim with a real fixed-seed (`7L`) coverage test (last test in the
+     file). Measured over that exact run: 227/300 (76%) generated histories contain a genuinely
+     concurrent pair, 148/300 (49%) produce at least one warning, and all five `WarningReason`
+     values fire — thresholds are set with margin below those exact counts.
+2. The core-level property suite: new package `snap/scala/src/test/scala/snap/props/`
+   (`CausalGraphGens.scala` + `ConvergencePropsSuite.scala`). Built exclusively against
+   `snap.core`'s PUBLIC surface (`Repo.validate`/`Repo.validateFully`, `Replay.materialize`) —
+   never the `private[core]` proof-value constructors `ConcurrentReplayLawsSuite` uses, and never
+   the `merge` command. Recombination is exactly "union the patch vectors, join the frontiers, then
+   `Repo.validateFully`" per the brief. See the final agent report for the generator's design,
+   measured coverage evidence, and an explicit note on what this suite's permutation property does
+   and does not prove (transparency: `Repo.validate` requires pre-sorted input, so the recombined
+   input to it is byte-identical regardless of split/combination order — the property's genuine
+   value is validating the join/union recombination algebra and `Repo.validateFully`'s own
+   determinism across hundreds of diverse generated graphs, not bypassing engine-internal
+   processing order the way `ConcurrentReplayLawsSuite` can from inside `snap.core`).
+
+**Not done here (second pass's job):** the `merge`-command-level properties, the acceptance
+criteria checkboxes above (all reference either the provided merge-dependent tests or are
+ambiguous between core/command level), and the phase-3 gate. No main/scala production code was
+touched — no divergence was found in `Ot`/`Replay`/`Diff` by this pass's properties or directed
+tests.
+
 ## Pre-implementation pointers
 - From `reviews/T05-review.md` finding 1: add the script-shape golden pinning
   equality-before-tie on trailing repeated lines — `diff([a\n,a\n],[a\n])` must be
