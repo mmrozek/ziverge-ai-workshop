@@ -44,3 +44,9 @@ execution/effects/exit codes (R92). Real TTY probe per D20 behind the `Tty` trai
   string) obtains the correctly selected **stderr** presentation for warnings. Routing
   merge's warnings back through `Cli.emit` is the obvious direction; whichever way it
   goes, R92 requires the warning order to be identical in plain and terminal mode.
+- T19 adds a **third** presentation call site: `CommandsServe` prints the `--serve` ready
+  line through `Presentation.Plain` directly. Per this task's own scope line that URL
+  **stays plain** in every mode, so the correct outcome is a deliberate plain rendering,
+  not an oversight to be "fixed" by routing it through the selected renderer. Enumerate
+  all three sites (`Cli.emit`, `CommandsMerge`, `CommandsServe`) before restructuring, and
+  state in the notes which of them is intentionally exempt.
