@@ -25,7 +25,7 @@ the **only** place status lives.
 | T17 | 3 | merge command | 3 | done | T12,T16 | 6cc2291 |
 | T18 | 3 | Convergence hardening & property suite | 2 | done | T17 | 720f7e5 + 75067db |
 | T19 | 4 | --serve HTTP server | 3 | done | T07,T13 | e80c960 |
-| T20 | 4 | HTTP client & remote operands | 2 | verifying | T17,T19 | |
+| T20 | 4 | HTTP client & remote operands | 2 | done | T17,T19 | f89e91b |
 | T21 | 4 | Cross-repo collision, failure precedence, portability | 2 | todo | T20 | |
-| T22 | 5 | Terminal renderer, SNAP_COLOR/NO_COLOR, TTY | 3 | review | T13,T17,T19 | |
+| T22 | 5 | Terminal renderer, SNAP_COLOR/NO_COLOR, TTY | 3 | verifying | T13,T17,T19 | |
 | T23 | 5 | Holdout-gap hardening & final pass | 2 | todo | T18,T21,T22 | |
