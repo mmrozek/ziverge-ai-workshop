@@ -28,4 +28,4 @@ the **only** place status lives.
 | T20 | 4 | HTTP client & remote operands | 2 | done | T17,T19 | f89e91b |
 | T21 | 4 | Cross-repo collision, failure precedence, portability | 2 | done | T20 | 8d50277 |
 | T22 | 5 | Terminal renderer, SNAP_COLOR/NO_COLOR, TTY | 3 | done | T13,T17,T19 | e72508e |
-| T23 | 5 | Holdout-gap hardening & final pass | 2 | in-progress | T18,T21,T22 | |
+| T23 | 5 | Holdout-gap hardening & final pass | 2 | done | T18,T21,T22 | f7a4738 |
