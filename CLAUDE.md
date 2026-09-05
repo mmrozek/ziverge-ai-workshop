@@ -65,6 +65,15 @@ spec+tests arrive → spec analysis (SPEC-NOTES.md) → DESIGN.md + PLAN.md → 
 
 Phases are vertical slices: each one is named by the provided tests it turns green.
 
+**Post-completion audit terms** (user, 2026-09-05): runs on **Opus**, three independent
+lenses in parallel — spec conformance / adversarial determinism & merge semantics /
+phase-4 + CLI surface, the last also carrying the skipped phase-5 gate's antipattern run
+and final suite+lint. **Report only — auditors never edit code**; the orchestrator triages
+and dispatches fixes, exactly as at a phase gate. **A Major finding blocks the release**;
+Minors and Nits are triaged and may be deferred with a recorded rationale. Mutation
+testing is a required method for the determinism lens: it caught in one pass (T18's
+review) what four reviews had missed by reading.
+
 **Verification commands** (from repo root): full suite `./snap/verify --lang scala`
 (builds the Scala workspace first). **JDK note (T10 finding):** the harness passes
 through only `PATH` (drops `JAVA_HOME`); the machine-default JDK 24 prints a
