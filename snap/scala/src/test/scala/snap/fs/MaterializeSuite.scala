@@ -115,6 +115,49 @@ class MaterializeSuite extends munit.FunSuite:
     assert(Files.list(root).toList.isEmpty, "root should hold no leftover entries")
   }
 
+  // ------------------------------------------------------- untracked directories (audit finding 1)
+  // Reproduces `reviews/audit-1-spec-conformance.md` finding 1: the prior `pruneEmptyDirectories`
+  // swept every empty directory under `root`, so an untracked, pre-existing empty directory was
+  // silently deleted even by a no-op install. SPEC §7.8 requires a no-op merge to "change nothing";
+  // §6.2/R70 says only "newly empty" directories are removed.
+
+  test(
+    "a no-op install (current == target) never touches the filesystem: pre-existing untracked " +
+      "empty directories, including a nested one, survive"
+  ) {
+    val root = tempRoot()
+    write(root, "a", "A\n")
+    Files.createDirectories(root.resolve("untracked/nested"))
+    val current = tree("a" -> "A\n")
+    assertEquals(Materialize.install(root, current, current), Right(()))
+    assertEquals(scanPaths(root), Vector("a"))
+    assert(
+      Files.isDirectory(root.resolve("untracked/nested")),
+      "untracked nested directory must survive a no-op install"
+    )
+    assert(
+      Files.isDirectory(root.resolve("untracked")),
+      "untracked parent directory must survive a no-op install"
+    )
+  }
+
+  test(
+    "a directory this install actually empties is still pruned, but an unrelated untracked empty " +
+      "directory survives (pruning is scoped to this install's own removals, not a global sweep)"
+  ) {
+    val root = tempRoot()
+    write(root, "gone/leaf", "bye\n")
+    Files.createDirectories(root.resolve("spare/nested")) // untracked, unrelated to the removal
+    val current = tree("gone/leaf" -> "bye\n")
+    assertEquals(Materialize.install(root, current, Tree.empty), Right(()))
+    assertEquals(scanPaths(root), Vector.empty)
+    assert(!Files.exists(root.resolve("gone")), "the directory this install emptied must be pruned")
+    assert(
+      Files.isDirectory(root.resolve("spare/nested")),
+      "unrelated untracked directory must survive"
+    )
+  }
+
   // ------------------------------------------------------------------------------ determinism
 
   test("the on-disk result is independent of the target Tree's construction/insertion order") {

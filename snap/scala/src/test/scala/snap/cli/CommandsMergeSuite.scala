@@ -183,6 +183,62 @@ class CommandsMergeSuite extends munit.FunSuite:
     assertEquals(textAt(root, "f.txt"), "one\n")
   }
 
+  // -------------------------------------------------- untracked directories (audit finding 1)
+  // Reproduces `reviews/audit-1-spec-conformance.md` finding 1 end to end through `snap merge`:
+  // the prior `Materialize.pruneEmptyDirectories` swept the ENTIRE working tree, so an untracked,
+  // pre-existing empty directory was silently deleted even by a no-op merge of already-contained
+  // history — contradicting SPEC §7.8's "changes nothing".
+
+  test(
+    "merging already-contained history leaves pre-existing untracked empty directories alone, " +
+      "including a nested one, with the rest of the tree byte-identical (audit finding 1)"
+  ) {
+    val root = initRepo("a@x")
+    write(root, "f.txt", "one\n")
+    commit(root, "one")
+    val copy = copyRepo(root)
+    Files.createDirectories(root.resolve("myEmptyDir/nested"))
+    Files.createDirectories(root.resolve("docs"))
+    val filesBefore = workingFiles(root)
+    assertEquals(run(root, "merge", copy.toString), (0, "(a@x->1)\n", ""))
+    assertEquals(workingFiles(root), filesBefore)
+    assert(
+      Files.isDirectory(root.resolve("myEmptyDir/nested")),
+      "nested untracked directory must survive a no-op merge"
+    )
+    assert(
+      Files.isDirectory(root.resolve("docs")),
+      "untracked directory must survive a no-op merge"
+    )
+  }
+
+  test(
+    "a namespace-winner install (bob's directory `a/b` replaced by alice's later-created file " +
+      "`a`) still prunes correctly, and an unrelated untracked empty directory survives"
+  ) {
+    val aliceRepo = initRepo("alice@x")
+    write(aliceRepo, "a", "ancestor\n")
+    commit(aliceRepo, "alice creates a")
+    val bobRepo = initRepo("bob@x")
+    write(bobRepo, "a/b", "descendant\n")
+    commit(bobRepo, "bob creates a/b")
+    // Untracked, unrelated to the merge — must survive even though this install prunes bob's
+    // now-superseded `a/` directory elsewhere in the same tree.
+    Files.createDirectories(bobRepo.resolve("spare/nested"))
+
+    val (exit, out, err) = run(bobRepo, "merge", aliceRepo.toString)
+    assertEquals(exit, 0)
+    assertEquals(out, "(alice@x->1,bob@x->1)\n")
+    assertEquals(err, "warning: auto-resolved a/b: namespace-wins\n")
+    assert(Files.isRegularFile(bobRepo.resolve("a")), "alice's file must win the namespace")
+    assertEquals(textAt(bobRepo, "a"), "ancestor\n")
+    assert(!Files.exists(bobRepo.resolve("a/b")), "bob's superseded a/b must be gone")
+    assert(
+      Files.isDirectory(bobRepo.resolve("spare/nested")),
+      "unrelated untracked directory must survive"
+    )
+  }
+
   // ------------------------------------------------------------------ warning subtraction (R75)
 
   test("a warning already in the pre-merge local replay is not re-printed; a new one is (R75)") {

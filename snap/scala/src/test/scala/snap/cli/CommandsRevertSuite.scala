@@ -79,6 +79,36 @@ class CommandsRevertSuite extends munit.FunSuite:
     )
   }
 
+  // -------------------------------------------------- untracked directories (audit finding 1)
+  // Reproduces `reviews/audit-1-spec-conformance.md` finding 1 end to end through `snap revert`:
+  // the prior `Materialize.pruneEmptyDirectories` swept the ENTIRE working tree, so an untracked,
+  // pre-existing empty directory was silently deleted by any revert, even one that only touched an
+  // unrelated file.
+
+  test(
+    "revert leaves pre-existing untracked empty directories alone, including a nested one, even " +
+      "though it does mutate the tracked files (audit finding 1)"
+  ) {
+    val root = initRepo()
+    write(root, "f", "one\n")
+    assertEquals(run(root, "commit", "first")._1, 0) // (a@x->1)
+    write(root, "f", "two\n")
+    assertEquals(run(root, "commit", "second")._1, 0) // (a@x->2)
+    Files.createDirectories(root.resolve("myEmptyDir/nested"))
+    Files.createDirectories(root.resolve("docs"))
+
+    assertEquals(run(root, "revert", "(a@x->1)"), (0, "(a@x->3)\n", ""))
+    assertEquals(textAt(root, "f"), "one\n")
+    assert(
+      Files.isDirectory(root.resolve("myEmptyDir/nested")),
+      "nested untracked directory must survive a real revert"
+    )
+    assert(
+      Files.isDirectory(root.resolve("docs")),
+      "untracked directory must survive a real revert"
+    )
+  }
+
   // ------------------------------------------------------------------------ additive guarantee
 
   test("revert is additive: patch count grows by exactly one, the frontier strictly dominates") {

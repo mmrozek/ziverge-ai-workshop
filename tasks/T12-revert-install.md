@@ -108,6 +108,42 @@ trees → exact `snap: target tree is already current`. DESIGN §7.
   `sbt -batch "scalafixAll --check"` both green (full clean run, 38 sources); provided suite
   `--filter revert` 1/1 green; full provided suite 9/28 green (baseline 8 — 01, 02, 03, 04, 08,
   15, 23, 27 — plus 07-revert), no regressions.
+- **Fix (post-completion audit, finding 1 — Major, "silent data loss").** `Materialize.install`'s
+  `pruneEmptyDirectories(root)` swept the *entire* tree under `root`, unconditionally, twice —
+  deleting any untracked, pre-existing empty directory even on a no-op `merge`/`revert`, contrary
+  to SPEC §6.2/R70's "removes **newly** empty directories" and §7.8's "changes nothing" for an
+  already-contained merge. Replaced with `pruneEmptiedAncestors(root, removed)`: candidates are
+  only the proper segment-prefix ancestors of paths this install actually deleted
+  (`SnapPath.ancestors`), deduplicated and processed deepest-first (ties broken by
+  `SnapPath.ordering`/`Utf8Order` for determinism, though ties can never be ancestor/descendant of
+  one another so they can't affect the result) so a directory is only checked for emptiness after
+  every nested candidate has already been resolved. `removed` empty (the common already-contained
+  case) now short-circuits to zero filesystem access in this step. The directory-blocks-file
+  direction of the file/directory transition (test 07's second shape) is still covered by the same
+  mechanism, not a separate case: every tracked descendant such a blocking directory holds is, by
+  prefix-freeness (R25), necessarily also in `removed`, so the directory is exactly an ancestor of
+  one of those deletions. **Dropped the second (post-write) prune pass**: once pruning is scoped to
+  `removed`'s ancestors, writing bytes to `written` paths can neither delete nor empty a directory,
+  so a repeat pass after `writePaths` is a provable no-op, not a safety net — kept it out rather
+  than leave dead code the reader has to re-verify is harmless. `MetadataDirName`/the `.snap` guard
+  was removed too: no valid `SnapPath` can have `.snap` as an ancestor
+  (`SnapPath.parse`'s `ReservedFirstSegment` forbids it as a *first* segment, and ancestors preserve
+  the first segment), so the new candidate set can never reach `.snap` — the explicit guard was
+  protecting against a case the old global sweep created for itself. Order preserved: delete →
+  prune → create parents → write (pruning must still run before `ensureParents`/`writePaths`, since
+  the directory-blocks-file case needs the blocker gone before the target path can be created as a
+  file). New regression tests: `MaterializeSuite` (no-op install with a pre-existing nested
+  untracked empty directory touches nothing; a directory this install *does* empty is still pruned
+  while an unrelated untracked empty directory survives) and CLI-level end-to-end reproductions of
+  the audit's own repro in `CommandsMergeSuite` (already-contained-history merge) and
+  `CommandsRevertSuite` (a real, mutating revert), plus a namespace-winner
+  directory→file merge test (`a/b` superseded by `a`) with an unrelated untracked directory
+  alongside, to pin that the file/directory transition and the scoped pruning coexist correctly.
+  Gates: `sbt -batch test` 698/698 (baseline 693 + 5 new); `scalafmtCheckAll`/`scalafixAll --check`
+  green; full provided suite 28/28 (including test 07 `revert` and test 11
+  `namespace-conflicts`); manually reproduced the audit's exact `mkdir -p myEmptyDir/nested docs`
+  + `snap merge .` and a real `snap revert` scenario against the rebuilt jar — the untracked
+  directories survive in both cases now.
 - **Integration note (T11/T16 rebase onto `main`, orchestrator).** This task's worktree predated
   both T11 (`diff`, `snap/cli/DiffRender.scala`) and T16 (the concurrent replay engine). After
   cherry-picking onto `main`, `CommandsRevert.scala`'s one call site written against the OLD
