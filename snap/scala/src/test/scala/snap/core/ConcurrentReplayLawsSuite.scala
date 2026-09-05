@@ -98,6 +98,25 @@ class ConcurrentReplayLawsSuite extends munit.ScalaCheckSuite:
       .materialize(handBuilt(frontier, patches), version)
       .fold(e => fail(s"generator base failed to materialize: ${e.message}"), _._1)
 
+  /** The edit script for editing `old`'s tokens at a seed-picked position: mode 0 is a pure insert
+    * of one brand-new, globally-unique line (the only mode available at `pos == old.size`, i.e.
+    * `maxRemove == 0`, appending past the last token — nothing there to remove); mode 1 is a pure
+    * delete of 1..`maxRemove` existing tokens; mode 2 replaces 1..`maxRemove` existing tokens with
+    * one new unique line. Modes 1 and 2 are what make `Change.Text` scripts (and therefore the
+    * aggregate context edit `Q = Diff.diff(B, C)` computed live during replay) sometimes contain a
+    * `Delete` op and sometimes a genuine content replacement — reviews/T18-review.md finding 1: an
+    * insertion-only generator can never author a `Delete` op, so neither R62's diff tie-break nor
+    * OT's three delete-consuming rows (Ot.scala:69-93) are reachable by any property in this suite.
+    * Shared by [[chooseChange]] and [[buildTextOnly]] so both call sites carry the fix.
+    */
+  private def textEdit(seed: StepSeed, i: Int, old: Vector[String]): EditScript =
+    val pos = seed.pick % (old.size + 1)
+    val maxRemove = old.size - pos
+    val editMode = if maxRemove == 0 then 0 else seed.pick % 3
+    val removed = if editMode == 0 then 0 else 1 + (seed.pick / 3) % maxRemove
+    val inserted = if editMode == 1 then Vector.empty else Vector(s"e$i\n")
+    Diff.diff(old, old.patch(pos, inserted, removed))
+
   private def chooseChange(seed: StepSeed, i: Int, baseTree: Tree): Change =
     val present = baseTree.paths
     def create: Change =
@@ -109,7 +128,8 @@ class ConcurrentReplayLawsSuite extends munit.ScalaCheckSuite:
       val path = if candidates.isEmpty then p(s"g$i") else candidates(seed.pick % candidates.size)
       Change.Text(path, Diff.diff(Vector.empty, Vector(s"c$i\n")))
     seed.kind match
-      case 1 => // edit a present text file: insert one unique line at a seed-picked position
+      case 1 => // edit a present text file: insert, delete, or replace existing tokens at a
+        // seed-picked position (see textEdit's doc)
         val textPaths = present.filter(path =>
           TextTokens
             .tokenizeBytes(
@@ -125,8 +145,7 @@ class ConcurrentReplayLawsSuite extends munit.ScalaCheckSuite:
               IArray.genericWrapArray(baseTree.get(path).fold(IArray.empty[Byte])(identity)).toArray
             )
             .getOrElse(fail("filtered path must be text"))
-          val pos = seed.pick % (old.size + 1)
-          Change.Text(path, Diff.diff(old, old.patch(pos, Vector(s"e$i\n"), 0)))
+          Change.Text(path, textEdit(seed, i, old))
       case 2 => // delete a present path
         if present.isEmpty then create else Change.Delete(present(seed.pick % present.size))
       case 3 => // replace a present path with unique bytes, alternating text and binary
@@ -230,8 +249,7 @@ class ConcurrentReplayLawsSuite extends munit.ScalaCheckSuite:
             IArray.genericWrapArray(baseTree.get(file).fold(IArray.empty[Byte])(identity)).toArray
           )
           .getOrElse(fail("text-only file must stay text"))
-        val pos = seed.pick % (old.size + 1)
-        val change = Change.Text(file, Diff.diff(old, old.patch(pos, Vector(s"e$i\n"), 0)))
+        val change = Change.Text(file, textEdit(seed, i, old))
         val patch = Patch
           .make(author, base.get(author) + 1L, base, "m", Vector(change))
           .fold(e => fail(s"generator produced an invalid patch: ${e.message}"), identity)
@@ -253,6 +271,130 @@ class ConcurrentReplayLawsSuite extends munit.ScalaCheckSuite:
     }) { case ((patches, frontier), perm) =>
       val reference = Replay.materialize(structurallyValid(frontier, patches), frontier)
       assertEquals(Replay.materialize(handBuilt(frontier, perm.map(patches)), frontier), reference)
+    }
+  }
+
+  // --- targeted content-correctness check (reviews/T18-review.md finding 1) ---
+  //
+  // The properties above compare a computation against ITSELF (permutation/idempotence) or a
+  // recombination against a reference built the same way — a deterministic-but-wrong Diff/Ot bug
+  // survives both, because both sides of the comparison run through the identical (buggy) code on
+  // the identical input. Confirmed empirically while building this fix: mutating either
+  // `Diff.scala`'s tie-break (R62) or `Ot.scala`'s row 4 (a P-delete/Q-retain row silently emitting
+  // `Retain` instead of `Delete`) leaves every property above green even once the generator
+  // authors real deletions and replacements (see reviews/T18-review.md and this task's own notes
+  // for the exact mutation-testing trace). This property instead compares against an
+  // INDEPENDENTLY DERIVED expected token sequence, so it can actually distinguish correct from
+  // wrong.
+
+  private final case class CursorCollision(base: Vector[String], pos: Int, removed: Int)
+
+  /** `n` distinct, LF-terminated base tokens (`"L0\n".."L{n-1}\n"`, never colliding with the "R\n"/
+    * "I\n" tags used below), a position `pos` inside the base, and a removal count `removed` that
+    * always leaves at least one token genuinely replaced (`pos < n`, `1 <= removed <= n - pos`).
+    */
+  private val genCursorCollision: Gen[CursorCollision] =
+    for
+      n <- Gen.choose(2, 6)
+      pos <- Gen.choose(0, n - 1)
+      removed <- Gen.choose(1, n - pos)
+    yield CursorCollision((0 until n).map(k => s"L$k\n").toVector, pos, removed)
+
+  /** Two concurrent single-change patches over a shared seeded file, both based on the seed's
+    * result (genuinely concurrent — neither sees the other): `replacerAuthor` deletes
+    * [[CursorCollision.removed]] existing tokens at `pos` and inserts a distinct `"R\n"` tag (a
+    * genuine content replacement of DISJOINT content — ties the diff walk at every step of that
+    * sub-block, per R61's recurrence, so this always exercises R62's tie-break, not just
+    * sometimes); `inserterAuthor` purely inserts a distinct `"I\n"` tag at the SAME position `pos`
+    * (no removal) — the same cursor as the replacement. Both stay within R69 case 3 (OT, no
+    * warnings): neither creates, deletes, nor touches any other path.
+    *
+    * Authors are a parameter, not fixed literals: [[Replay.readyOrdering]] decides which of two
+    * concurrent patches is integrated first (becomes the aggregate context `Q` the other is
+    * transformed against as `P`) by comparing RESULT VERSIONS, not by which edit is "the replace" —
+    * so whichever author name wins that comparison is always cast as `Q`, and the delete op only
+    * ever reaches `Ot.transform` as a `P delete` (exercising row 4) when the REPLACER loses it. The
+    * property below calls this with both author-role assignments per generated case so row 4 is
+    * exercised regardless of which literal names are chosen (reviews/T18-review.md finding 1:
+    * confirmed necessary by mutation testing — a fixed author pair let the OT row 4 mutation
+    * (`Ot.scala`'s `P delete`/`Q retain` row silently emitting `Retain` instead of `Delete`) slip
+    * through even after this property existed).
+    */
+  private def buildCursorCollision(
+      c: CursorCollision,
+      replacerAuthor: ContributorId,
+      inserterAuthor: ContributorId
+  ): (Vector[Patch], Version) =
+    val file = p("cursor")
+    val seed = Patch
+      .make(
+        id("seed@x"),
+        1L,
+        Version.empty,
+        "m",
+        Vector(Change.Text(file, Diff.diff(Vector.empty, c.base)))
+      )
+      .fold(e => fail(s"unbuildable seed: ${e.message}"), identity)
+    val seedResult = seed.result.fold(e => fail(s"unbuildable result: ${e.message}"), identity)
+    val replaced = c.base.patch(c.pos, Vector("R\n"), c.removed)
+    val inserted = c.base.patch(c.pos, Vector("I\n"), 0)
+    val replacer = Patch
+      .make(
+        replacerAuthor,
+        1L,
+        seedResult,
+        "m",
+        Vector(Change.Text(file, Diff.diff(c.base, replaced)))
+      )
+      .fold(e => fail(s"unbuildable replacer: ${e.message}"), identity)
+    val inserter = Patch
+      .make(
+        inserterAuthor,
+        1L,
+        seedResult,
+        "m",
+        Vector(Change.Text(file, Diff.diff(c.base, inserted)))
+      )
+      .fold(e => fail(s"unbuildable inserter: ${e.message}"), identity)
+    val replacerResult =
+      replacer.result.fold(e => fail(s"unbuildable result: ${e.message}"), identity)
+    val inserterResult =
+      inserter.result.fold(e => fail(s"unbuildable result: ${e.message}"), identity)
+    val frontier = seedResult.join(replacerResult).join(inserterResult)
+    (Vector(seed, replacer, inserter), frontier)
+
+  property(
+    "a concurrent replace and a concurrent pure insert at the same cursor converge with the" +
+      " insert's tag immediately before the replace's tag, and every replaced token gone" +
+      " (reviews/T18-review.md finding 1)"
+  ) {
+    forAll(genCursorCollision) { c =>
+      // Both author-role assignments (see buildCursorCollision's doc): exactly one of the two puts
+      // the replacer's delete on the `P` side of `Ot.transform`, hitting row 4.
+      Vector((id("d1@x"), id("d2@x")), (id("d2@x"), id("d1@x"))).foreach {
+        case (replacerAuthor, inserterAuthor) =>
+          val (patches, frontier) = buildCursorCollision(c, replacerAuthor, inserterAuthor)
+          val result = Replay.materialize(structurallyValid(frontier, patches), frontier)
+          result match
+            case Left(e)                 => fail(s"expected a clean OT merge, got: ${e.message}")
+            case Right((tree, warnings)) =>
+              assertEquals(warnings, SortedSet.empty[Warning])
+              val bytes = IArray
+                .genericWrapArray(tree.get(p("cursor")).fold(IArray.empty[Byte])(identity))
+                .toArray
+              val tokens =
+                TextTokens.tokenizeBytes(bytes).getOrElse(fail("merged cursor file must stay text"))
+              val removedTokens = c.base.slice(c.pos, c.pos + c.removed).toSet
+              assert(!tokens.exists(removedTokens.contains), s"a replaced token survived: $tokens")
+              val insIdx = tokens.indexOf("I\n")
+              val replIdx = tokens.indexOf("R\n")
+              assert(insIdx >= 0 && replIdx >= 0, s"both tags must survive exactly once: $tokens")
+              assertEquals(
+                replIdx,
+                insIdx + 1,
+                s"expected the insert tag immediately before the replace tag: $tokens"
+              )
+      }
     }
   }
 
@@ -283,21 +425,34 @@ class ConcurrentReplayLawsSuite extends munit.ScalaCheckSuite:
         }
       }
 
+    // reviews/T18-review.md finding 1: a generator regressing to insertion-only `Change.Text`
+    // scripts would silently drop all coverage of R62's diff tie-break and OT's delete-consuming
+    // rows — this must fail exactly as loudly as a missing warning reason would.
+    def hasTextDelete(patches: Vector[Patch]): Boolean =
+      patches.exists(_.changes.exists {
+        case Change.Text(_, edit) =>
+          edit.ops.exists { case EditOp.Delete(_) => true; case _ => false }
+        case _ => false
+      })
+
     val evaluated = histories.map { case (patches, frontier) =>
       val warnings = Replay
         .materialize(structurallyValid(frontier, patches), frontier)
         .fold(e => fail(s"generated history failed to replay: ${e.message}"), _._2)
-      (warnings, hasConcurrentPair(patches))
+      (warnings, hasConcurrentPair(patches), hasTextDelete(patches))
     }.toVector
 
     val concurrentCount = evaluated.count(_._2)
     val historiesWithWarnings = evaluated.count(_._1.nonEmpty)
+    val deleteEditCount = evaluated.count(_._3)
     val reasonsSeen = evaluated.iterator.flatMap(_._1).map(_.reason).toSet
 
     // Measured over this exact fixed-seed run (this test's own assertions ARE the measurement —
-    // no unverified prose): with seed 7L and 300 samples, 227 histories (76%) contain a genuinely
-    // concurrent pair of patches and 148 (49%) produce at least one warning, with all five reasons
-    // observed. Thresholds below are set with comfortable margin under those exact counts.
+    // no unverified prose): with seed 7L and 300 samples, at least a quarter of histories contain a
+    // `Change.Text` script with a `Delete` op (reviews/T18-review.md finding 1's fix), most contain
+    // a genuinely concurrent pair of patches, a substantial fraction produce at least one warning,
+    // and all five reasons are observed. Thresholds below are set with margin under the measured
+    // counts (see the task notes for the exact figures from this implementation's own runs).
     assert(
       concurrentCount >= samples * 7 / 10,
       s"expected most of $samples generated histories to contain a concurrent pair, only" +
@@ -307,6 +462,11 @@ class ConcurrentReplayLawsSuite extends munit.ScalaCheckSuite:
       historiesWithWarnings >= samples * 2 / 5,
       s"expected a substantial fraction of $samples histories to produce a warning, only" +
         s" $historiesWithWarnings did"
+    )
+    assert(
+      deleteEditCount >= samples / 4,
+      s"expected a substantial fraction of $samples histories to contain a text edit with a" +
+        s" Delete op, only $deleteEditCount did"
     )
     assertEquals(
       reasonsSeen,

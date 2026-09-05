@@ -3,6 +3,8 @@ package snap.props
 import org.scalacheck.Gen
 import org.scalacheck.Prop.forAll
 import org.scalacheck.rng.Seed
+import snap.core.Change
+import snap.core.EditOp
 import snap.core.Ord
 import snap.core.Patch
 import snap.core.Version
@@ -150,23 +152,36 @@ class ConvergencePropsSuite extends munit.ScalaCheckSuite:
         }
       }
 
+    // reviews/T18-review.md finding 1: a generator regressing to insertion-only `Change.Text`
+    // scripts would silently drop all coverage of R62's diff tie-break and OT's delete-consuming
+    // rows — this must fail exactly as loudly as a missing warning reason would.
+    def hasTextDelete(patches: Vector[Patch]): Boolean =
+      patches.exists(_.changes.exists {
+        case Change.Text(_, edit) =>
+          edit.ops.exists { case EditOp.Delete(_) => true; case _ => false }
+        case _ => false
+      })
+
     val evaluated = cases.map { c =>
       val warnings = CausalGraphGens
         .validateState(ReplicaState(c.patches, c.frontier))
         .fold(e => fail(s"generated graph failed to validate: ${e.message}"), _.warnings)
       val multiAuthorShards =
         CausalGraphGens.splitIntoReplicas(c.patches, c.seeds, c.replicaCount).count(_.nonEmpty)
-      (warnings, multiAuthorShards, isConcurrentPair(c.patches))
+      (warnings, multiAuthorShards, isConcurrentPair(c.patches), hasTextDelete(c.patches))
     }.toVector
 
     val concurrentCount = evaluated.count(_._3)
     val multiShardCount = evaluated.count(_._2 >= 2)
+    val deleteEditCount = evaluated.count(_._4)
     val reasonsSeen = evaluated.iterator.flatMap(_._1).map(_.reason).toSet
 
     // Measured over this exact fixed-seed run (see this test's own assertions — not prose): with
     // seed 42L and 300 samples, 284 graphs (95%) contain a genuinely concurrent pair of patches,
-    // 296 splits (99%) leave at least two shards non-empty, and all five warning reasons fire at
-    // least once. Thresholds below are set with margin under those exact counts.
+    // 296 splits (99%) leave at least two shards non-empty, a substantial fraction contain a
+    // `Change.Text` script with a `Delete` op (reviews/T18-review.md finding 1's fix), and all five
+    // warning reasons fire at least once. Thresholds below are set with margin under those counts
+    // (see the task notes for the exact delete-coverage figure from this implementation's own run).
     assert(
       concurrentCount >= samples * 9 / 10,
       s"expected most of $samples generated graphs to contain a concurrent pair, only $concurrentCount did"
@@ -174,6 +189,11 @@ class ConvergencePropsSuite extends munit.ScalaCheckSuite:
     assert(
       multiShardCount >= samples * 9 / 10,
       s"expected most of $samples splits to leave >=2 non-empty replicas, only $multiShardCount did"
+    )
+    assert(
+      deleteEditCount >= samples / 4,
+      s"expected a substantial fraction of $samples graphs to contain a text edit with a Delete" +
+        s" op, only $deleteEditCount did"
     )
     assertEquals(
       reasonsSeen,

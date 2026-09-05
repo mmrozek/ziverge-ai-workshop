@@ -37,12 +37,18 @@ class DiffSuite extends munit.ScalaCheckSuite:
   }
 
   test(
-    "golden (reviews/T05-review.md finding 1): equality-before-tie on trailing repeated lines"
+    "golden (reviews/T05-review.md finding 1): equal-token retain wins over the exhausted-side" +
+      " rule on trailing repeated lines"
   ) {
-    // R64 ("including for repeated equal lines"): rule 1 (equal tokens retain) is checked BEFORE
-    // the exhausted-side/tie rules, even when the equal token is the LAST of the shorter side. A
-    // future refactor toward a common-suffix-anchored or Myers-style walk could instead emit the
-    // delete/insert first here — every other project test (apply-roundtrip, validity,
+    // R64 ("including for repeated equal lines"): rule 1 (equal tokens retain) must be checked
+    // BEFORE the exhausted-side rules (i == n / j == m), even when the equal token is the LAST of
+    // the shorter side. This is NOT a guard against the R62 tie-break comparator at Diff.scala:32
+    // (`d(i+1)(j) <= d(i)(j+1)`) — this input never reaches it: `walk`'s four guards are mutually
+    // exclusive by index bounds, and this case resolves via the exhausted-side branch (`j == m` /
+    // `i == n`), so no reordering within the CURRENT walk shape could even change behavior here.
+    // The golden still guards a real, if larger, regression: a future refactor toward a
+    // common-suffix-anchored or Myers-style walk could plausibly emit the delete/insert before the
+    // trailing equal-token retain — every other project test (apply-roundtrip, validity,
     // cost-minimality, determinism, even the test-05 golden) stays green under such a variant
     // (reviews/T05-review.md finding 1), so this golden is the only guard against that regression.
     assertEquals(
