@@ -408,6 +408,27 @@ enum SnapError:
     */
   case CannotBindServer(detail: String)
 
+  // T20 additions: HTTP client (SPEC §9/§7.6/§7.8; R78, R102)
+
+  /** A remote GET (`merge <url>` / `diff --repo <url>`) answered with a status other than 200 —
+    * redirects are never followed (SPEC §9), so a 3xx lands here too. `status` is rendered as the
+    * exact substring `HTTP <status>` (test 13 pins `HTTP 302`).
+    */
+  case HttpStatus(status: Int)
+
+  /** The one GET itself never completed with a status line: connection refusal, an unresolvable
+    * host, a malformed URL, the D15 request timeout (a hanging server), or the D15 body-size cap.
+    * `detail` is the underlying failure's one-line description (untested wording, mirrors
+    * [[CannotBindServer]]'s boundary pattern).
+    */
+  case HttpRequestFailed(detail: String)
+
+  /** A 200 response body that is not valid UTF-8 — kept in the `invalid JSON` diagnostic class,
+    * mirroring [[RepositoryNotUtf8]] (a valid repository document is always UTF-8; untested
+    * wording).
+    */
+  case RemoteBodyNotUtf8
+
   /** One-line diagnostic detail, without the `snap: ` prefix — the CLI layer (T08) prepends the
     * prefix when printing (spec §10 `snap: <detail>`).
     */
@@ -487,6 +508,10 @@ enum SnapError:
     case InvalidPort(raw) => Messages.invalidPort(raw)
     // --- T19 additions ---
     case CannotBindServer(detail) => Messages.cannotBindServer(detail)
+    // T20 additions
+    case HttpStatus(status)        => Messages.httpStatus(status)
+    case HttpRequestFailed(detail) => Messages.httpRequestFailed(detail)
+    case RemoteBodyNotUtf8         => Messages.remoteBodyNotUtf8
 
 /** Message catalog (DESIGN D5): every diagnostic string of the implementation lives here,
   * test-pinned ones verbatim. No other module builds diagnostic text. Where a provided test anchors
@@ -819,3 +844,19 @@ object Messages:
     * [[cannotReadWorkTree]]).
     */
   def cannotBindServer(detail: String): String = s"cannot bind server: $detail"
+
+  // T20 additions: HTTP client (SPEC §9/§7.6/§7.8; R78, R102)
+
+  /** Pinned fragment `HTTP <status>` (test 13: `HTTP 302`) — the exact substring the tests match,
+    * with nothing else on either side of the number that could shift a naive substring match.
+    */
+  def httpStatus(status: Int): String = s"remote repository request failed: HTTP $status"
+
+  /** Untested wording (network effect boundary, mirroring [[cannotBindServer]]): covers connection
+    * failure, the D15 request timeout, and the D15 body-size cap — every way the one GET can fail
+    * short of a non-200 status, which is [[httpStatus]] instead.
+    */
+  def httpRequestFailed(detail: String): String = s"cannot fetch remote repository: $detail"
+
+  /** Kept in the `invalid JSON` diagnostic class, mirroring [[repositoryNotUtf8]]. */
+  val remoteBodyNotUtf8: String = "invalid JSON: remote repository response is not valid UTF-8"

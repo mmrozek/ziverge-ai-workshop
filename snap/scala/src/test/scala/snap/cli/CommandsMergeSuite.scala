@@ -259,22 +259,26 @@ class CommandsMergeSuite extends munit.FunSuite:
     assertEquals(repoBytes(root), before)
   }
 
-  test("an http(s) operand keeps D11's precedence and is T20's seam (NotImplemented until then)") {
+  test("an http(s) operand keeps D11's precedence: dirty wins before the GET is ever issued") {
     val root = initRepo("a@x")
     write(root, "f.txt", "one\n")
     commit(root, "one")
     write(root, "dirty.txt", "dirty\n")
-    // Dirty first, even for a URL operand — the operand kind is resolved at the remote-load step.
+    // Dirty first, even for a URL operand — the operand kind is resolved at the remote-load step,
+    // so a URL pointed at a port nothing listens on never gets far enough to matter here.
     assertEquals(
       run(root, "merge", "http://127.0.0.1:1/repository.json"),
       (1, "", "snap: working tree is dirty\n")
     )
     Files.delete(root.resolve("dirty.txt"))
-    // T20 replaces this expectation with the real HTTP client behavior (R102).
-    assertEquals(
-      run(root, "merge", "https://127.0.0.1:1/repository.json"),
-      (1, "", "snap: not implemented\n")
-    )
+    // T20 (R78/R102): once the tree is clean, `https://` is routed to the real client, which
+    // attempts the one GET and fails on connection refusal (nothing listens on port 1) — the
+    // typed [[snap.core.SnapError.HttpRequestFailed]] boundary, not `not implemented` (T20 replaces
+    // the placeholder this test pinned before the client existed).
+    val (exit, out, err) = run(root, "merge", "https://127.0.0.1:1/repository.json")
+    assertEquals(exit, 1)
+    assertEquals(out, "")
+    assert(err.startsWith("snap: cannot fetch remote repository: "), err)
   }
 
   test("merge takes exactly one operand (coarse R79; T13 owns the exhaustive matrix)") {

@@ -4,10 +4,11 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** `snap diff` through the full [[Cli.run]] pipeline (SPEC §7.6; DESIGN §8, D8; R31, R45, R79,
-  * R86–R87): the no-arg and `<old> <new>` forms end to end, `diff`'s distinct usage channel, the
-  * `invalid version` / `unknown version` classes, `--repo`'s grammar-accepted-but-not-implemented
-  * shape, and R86's validate-before-output guarantee.
+/** `snap diff` through the full [[Cli.run]] pipeline (SPEC §7.6; DESIGN §8, D8; R31, R45, R78–R79,
+  * R86–R87, R102): the no-arg and `<old> <new>` forms end to end, `diff`'s distinct usage channel,
+  * the `invalid version` / `unknown version` classes, `--repo`'s cross-repository form (T20: a
+  * local path or an `http(s)://` URL, the dot cross-check, no import), and R86's
+  * validate-before-output guarantee.
   */
 class CommandsDiffSuite extends munit.FunSuite:
 
@@ -134,16 +135,89 @@ class CommandsDiffSuite extends munit.FunSuite:
     assert(err.startsWith("snap: usage: snap diff"), s"unexpected message: $err")
   }
 
-  // ------------------------------------------------------------------ --repo grammar accepted, NotImplemented
+  // ------------------------------------------------------------------ --repo (T20; R78/R86/R102)
 
-  test("a grammar-valid --repo invocation is accepted syntax but not yet implemented (T20/T21)") {
+  test("a nonexistent --repo target fails on the remote load, not 'not implemented' (T20)") {
     val root = initRepo()
     write(root, "f.txt", "a\n")
     assertEquals(run(root, "commit", "first")._1, 0)
+    val (exit, out, err) = run(root, "diff", "()", "(a@x->1)", "--repo", "../elsewhere")
+    assertEquals(exit, 1)
+    assertEquals(out, "")
+    assert(err.startsWith("snap: cannot read repository: "), err)
+  }
+
+  test("diff --repo compares `old` locally and `new` in the other repository, without importing") {
+    val local = initRepo("a@x")
+    write(local, "f.txt", "a\n")
+    assertEquals(run(local, "commit", "first")._1, 0)
+    val remote = Files.createTempDirectory("snap-diff-repo-test")
+    assertEquals(run(remote, "init")._1, 0)
+    assertEquals(run(remote, "config", "contributor.id", "b@x")._1, 0)
+    write(remote, "g.txt", "remote\n")
+    assertEquals(run(remote, "commit", "remote"), (0, "(b@x->1)\n", ""))
     assertEquals(
-      run(root, "diff", "()", "(a@x->1)", "--repo", "../elsewhere"),
-      (1, "", "snap: not implemented\n")
+      run(local, "diff", "()", "(b@x->1)", "--repo", remote.toString),
+      (0, "--- /dev/null\n+++ b/g.txt\n@@ -1,0 +1,1 @@\n+remote\n", "")
     )
+    // No import: the local repository and working tree are untouched.
+    assertEquals(run(local, "log")._2, "(a@x->1)\ta@x\tfirst\n")
+    assert(!Files.exists(local.resolve("g.txt")))
+  }
+
+  test("diff --repo over HTTP (T20/R102) matches the local-path form byte-for-byte") {
+    val local = initRepo("a@x")
+    write(local, "f.txt", "a\n")
+    assertEquals(run(local, "commit", "first")._1, 0)
+    val remote = Files.createTempDirectory("snap-diff-repo-http-test")
+    assertEquals(run(remote, "init")._1, 0)
+    assertEquals(run(remote, "config", "contributor.id", "b@x")._1, 0)
+    write(remote, "g.txt", "remote\n")
+    assertEquals(run(remote, "commit", "remote"), (0, "(b@x->1)\n", ""))
+    val snapshot = snap.fs.Store.readRepository(Commands.repositoryFile(remote)) match
+      case Right(valid) => snap.json.RepoCodec.encodeBytes(valid.repository)
+      case Left(err)    => fail(s"expected a valid remote repository: ${err.message}")
+    snap.http.Server.start(snapshot, 0) match
+      case Left(err)       => fail(s"expected a successful bind: ${err.message}")
+      case Right(instance) =>
+        try
+          assertEquals(
+            run(
+              local,
+              "diff",
+              "()",
+              "(b@x->1)",
+              "--repo",
+              s"http://127.0.0.1:${instance.port}/repository.json"
+            ),
+            (0, "--- /dev/null\n+++ b/g.txt\n@@ -1,0 +1,1 @@\n+remote\n", "")
+          )
+        finally instance.stop()
+  }
+
+  test("diff --repo: a dot collision fails as corrupt, before either side is rendered (test 16)") {
+    val local = initRepo("a@x")
+    write(local, "file.txt", "local\n")
+    assertEquals(run(local, "commit", "local")._1, 0)
+    val remote = initRepo("a@x")
+    write(remote, "file.txt", "remote\n")
+    assertEquals(run(remote, "commit", "remote")._1, 0)
+    assertEquals(
+      run(local, "diff", "()", "(a@x->1)", "--repo", remote.toString),
+      (1, "", "snap: patch collision: a@x revision 1\n")
+    )
+  }
+
+  test("diff --repo validates the version operands too (R86), same class as the local form") {
+    val local = initRepo()
+    write(local, "f.txt", "a\n")
+    assertEquals(run(local, "commit", "first")._1, 0)
+    val remote = Files.createTempDirectory("snap-diff-repo-badversion")
+    assertEquals(run(remote, "init")._1, 0)
+    val (exit, out, err) = run(local, "diff", "(a@x->01)", "()", "--repo", remote.toString)
+    assertEquals(exit, 1)
+    assertEquals(out, "")
+    assert(err.startsWith("snap: invalid version: "), err)
   }
 
   // ------------------------------------------------------------------ R86: validate before output

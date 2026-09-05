@@ -11,20 +11,21 @@ import snap.fs.Materialize
 import snap.fs.Store
 import snap.fs.WorkTree
 
-import java.nio.file.Path
 import scala.annotation.tailrec
 
-/** `snap merge <repository>` (SPEC §7.8; R5, R14, R38, R75–R76, R89; DESIGN §5 step 4, §7, §8,
-  * D11): requires a clean working tree but NO contributor configuration; loads and validates the
-  * other repository; unions the patch sets (structural dedupe per dot — a cross-repository dot
-  * collision is corruption, §3.5/R38) and joins the frontiers (componentwise max, R34); canonically
-  * replays the joined history, installs the result ([[Materialize.install]], §10 mutation order),
-  * atomically replaces `repository.json` strictly afterwards (R105–R106); creates no patch and
-  * increments no revision; prints the NEW warnings to stderr (R75) and the joined version to
-  * stdout. Merging equal or already-contained history succeeds, changes nothing, emits no warnings,
-  * and prints the unchanged version — the general path realizes this with no special case: the
-  * union collapses to the local patch set, the join to the local frontier, the install to a no-op,
-  * and the metadata write to byte-identical canonical bytes (D7).
+/** `snap merge <repository>` (SPEC §7.8; R5, R14, R38, R75–R76, R78, R89, R102; DESIGN §5 step 4,
+  * §7, §8, D11): requires a clean working tree but NO contributor configuration; resolves and loads
+  * the other repository — a local path or an `http(s)://` URL alike
+  * ([[Commands.loadRemoteRepository]], T20) — and validates it; unions the patch sets (structural
+  * dedupe per dot — a cross-repository dot collision is corruption, §3.5/R38) and joins the
+  * frontiers (componentwise max, R34); canonically replays the joined history, installs the result
+  * ([[Materialize.install]], §10 mutation order), atomically replaces `repository.json` strictly
+  * afterwards (R105–R106); creates no patch and increments no revision; prints the NEW warnings to
+  * stderr (R75) and the joined version to stdout. Merging equal or already-contained history
+  * succeeds, changes nothing, emits no warnings, and prints the unchanged version — the general
+  * path realizes this with no special case: the union collapses to the local patch set, the join to
+  * the local frontier, the install to a no-op, and the metadata write to byte-identical canonical
+  * bytes (D7).
   *
   * This task is composition, not new merge semantics: the §6 engine ([[snap.core.Replay]], T16) and
   * the filesystem materializer (T12) are consumed as they are. In particular the two replays R75's
@@ -35,9 +36,11 @@ import scala.annotation.tailrec
   *
   * Failure precedence (D11, observable — test 20 and the dirty-before-remote acceptance case):
   * local parse+validate → working-tree scan (unsupported entry, then dirty) → remote load+validate
-  * → dot cross-check → replay → write. A grammar violation precedes everything (R79, coarse check
-  * here; T13 owns the exhaustive matrix). Every step is a link in one `for`-comprehension, so a
-  * failure at any link reaches [[Cli]]'s emitter with zero prior output and zero mutation (R103).
+  * (local path OR exactly one HTTP GET) → dot cross-check → replay → write. A grammar violation
+  * precedes everything (R79, coarse check here; T13 owns the exhaustive matrix). Every step is a
+  * link in one `for`-comprehension, so a failure at any link reaches [[Cli]]'s emitter with zero
+  * prior output and zero mutation (R103) — in particular a dirty working tree is still reported
+  * before a URL operand's GET is ever issued ([[CommandsMergeSuite]] pins this).
   *
   * Determinism (R76): the union is a symmetric function of the two patch sets (a dot present on
   * both sides carries structurally equal patches — one value — or fails), the join is symmetric,
@@ -55,10 +58,10 @@ object CommandsMerge:
       local <- Commands.readRepository(root) // D11: local parse+validate (pre-merge replay)
       working <- WorkTree.scan(root) // D11: scan — unsupported entry (R104) …
       _ <- requireClean(local.tree, working) // … then dirty (R27; test 20's order)
-      remoteRoot <- resolveOperand(env, operand) // R78: local path vs http(s):// URL (T20)
-      remote <- Store.readRepository(
-        Commands.repositoryFile(remoteRoot)
-      ) // D11: remote load+validate
+      remote <- Commands.loadRemoteRepository(
+        env,
+        operand
+      ) // R78/R102 (T20): D11 remote load+validate
       patches <- unionPatches(
         local.repository.patches,
         remote.repository.patches
@@ -87,18 +90,6 @@ object CommandsMerge:
   private def parseOperand(operands: List[String]): Either[SnapError, String] = operands match
     case repository :: Nil => Right(repository)
     case _                 => Left(SnapError.InvalidCommand)
-
-  /** R78: an explicit `http://`/`https://` operand is a remote repository — its resolution lands in
-    * T20 and stays [[SnapError.NotImplemented]] here (mirroring [[CommandsDiff]]'s `--repo` seam),
-    * checked at THIS position so D11's precedence already holds for URLs (a dirty tree is reported
-    * before the operand kind matters, exactly as it will be once T20 wires the client). Anything
-    * else is a local path to a repository root, resolved against the process working directory —
-    * `env.cwd`, never the discovered repository root.
-    */
-  private def resolveOperand(env: Env, operand: String): Either[SnapError, Path] =
-    if operand.startsWith("http://") || operand.startsWith("https://") then
-      Left(SnapError.NotImplemented)
-    else Right(env.cwd.resolve(operand).toAbsolutePath.normalize())
 
   /** R27/R89's clean requirement, reusing the one canonical current-vs-working comparison
     * ([[WorkingChanges]]) that `status`/`commit`/`revert` use.
