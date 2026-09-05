@@ -26,6 +26,6 @@ the **only** place status lives.
 | T18 | 3 | Convergence hardening & property suite | 2 | done | T17 | 720f7e5 + 75067db |
 | T19 | 4 | --serve HTTP server | 3 | done | T07,T13 | e80c960 |
 | T20 | 4 | HTTP client & remote operands | 2 | done | T17,T19 | f89e91b |
-| T21 | 4 | Cross-repo collision, failure precedence, portability | 2 | in-progress | T20 | |
+| T21 | 4 | Cross-repo collision, failure precedence, portability | 2 | done | T20 | 8d50277 |
 | T22 | 5 | Terminal renderer, SNAP_COLOR/NO_COLOR, TTY | 3 | done | T13,T17,T19 | e72508e |
 | T23 | 5 | Holdout-gap hardening & final pass | 2 | in-progress | T18,T21,T22 | |
