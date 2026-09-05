@@ -32,15 +32,39 @@ import snap.fs.WorkTree
   */
 object CommandsDiff:
 
+  /** `diff`'s three documented shapes (SPEC §7.6), each carrying exactly the operand text its
+    * branch needs. The ONE canonical shape parser (T23, phase-2 review finding 3):
+    * [[Grammar.diffRule]] used to mirror this same three-case pattern match independently — a
+    * one-sided edit could silently change which of the two decided an outcome, with no compiler or
+    * test signal, since the handler-side copy was unreachable through [[Cli.run]]
+    * ([[Grammar.check]] always runs first). `Grammar` now calls [[parseShape]] directly instead of
+    * re-declaring the shapes.
+    */
+  private[cli] enum Shape:
+    case NoArgs
+    case TwoVersions(oldText: String, newText: String)
+    case CrossRepo(oldText: String, newText: String, repoOperand: String)
+
+  /** Recognizes `diff`'s three shapes, or [[SnapError.DiffUsage]] for anything else — `diff`'s own
+    * distinct usage channel (DESIGN §8), never the generic [[SnapError.InvalidCommand]] (tests
+    * 14/24).
+    */
+  private[cli] def parseShape(operands: List[String]): Either[SnapError, Shape] = operands match
+    case Nil                       => Right(Shape.NoArgs)
+    case oldText :: newText :: Nil => Right(Shape.TwoVersions(oldText, newText))
+    case oldText :: newText :: "--repo" :: repoOperand :: Nil =>
+      Right(Shape.CrossRepo(oldText, newText, repoOperand))
+    case _ => Left(SnapError.DiffUsage)
+
   val handler: CommandHandler = (env, repoRoot, operands) =>
-    operands match
-      case Nil =>
+    parseShape(operands).flatMap {
+      case Shape.NoArgs =>
         for
           root <- Commands.requireRoot(repoRoot)
           valid <- Commands.readRepository(root)
           working <- WorkTree.scan(root)
         yield CommandOutput(ResultKind.Diff, DiffRender.render(valid.tree, working))
-      case oldText :: newText :: Nil =>
+      case Shape.TwoVersions(oldText, newText) =>
         for
           oldVersion <- parseVersionArg(oldText)
           newVersion <- parseVersionArg(newText)
@@ -54,7 +78,7 @@ object CommandsDiff:
           oldReplay <- Replay.materialize(valid.structure, oldVersion)
           newReplay <- Replay.materialize(valid.structure, newVersion)
         yield CommandOutput(ResultKind.Diff, DiffRender.render(oldReplay._1, newReplay._1))
-      case oldText :: newText :: "--repo" :: repoOperand :: Nil =>
+      case Shape.CrossRepo(oldText, newText, repoOperand) =>
         for
           oldVersion <- parseVersionArg(oldText)
           newVersion <- parseVersionArg(newText)
@@ -68,12 +92,14 @@ object CommandsDiff:
           oldReplay <- Replay.materialize(local.structure, oldVersion)
           newReplay <- Replay.materialize(remote.structure, newVersion)
         yield CommandOutput(ResultKind.Diff, DiffRender.render(oldReplay._1, newReplay._1))
-      case _ => Left(SnapError.DiffUsage)
+    }
 
   /** R31: a `diff` version operand that fails [[Version.parse]] renders uniformly as `invalid
     * version: <raw>`, echoing the offending text rather than the specific typed reason (T11 Notes /
     * decisions — mirrors D9's `invalid port: <arg>`; neither test 19 nor test 25 pins a reason,
-    * only the `invalid version` class).
+    * only the `invalid version` class). T23: the one canonical implementation, also used by
+    * [[CommandsRevert]] so the two commands' invalid-version-syntax wording can never diverge
+    * (holdout exposure 3).
     */
-  private def parseVersionArg(text: String): Either[SnapError, Version] =
+  private[cli] def parseVersionArg(text: String): Either[SnapError, Version] =
     Version.parse(text).left.map(_ => SnapError.InvalidVersionArgument(text))

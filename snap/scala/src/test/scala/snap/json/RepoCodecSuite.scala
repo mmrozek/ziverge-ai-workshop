@@ -342,7 +342,12 @@ class RepoCodecSuite extends ScalaCheckSuite:
       """{"type": "text", "path": "", "edit": []}""",
       """{"type": "delete", "path": "a//b"}""",
       """{"type": "delete", "path": "../up"}""",
-      """{"type": "delete", "path": "a\\b"}"""
+      """{"type": "delete", "path": "a\\b"}""",
+      // T23 (R23 holdout gap): an ASCII control character inside a PATCH's path — SPEC-NOTES §2.1
+      // notes only `.snap`-first-segment (test 15) was exercised at this layer; backslash/`.`/`..`
+      // were added above, but a raw control byte was never driven through the decode path
+      // specifically (only through `SnapPath.parse` directly, in `SnapPathSuite`).
+      """{"type": "delete", "path": "a\tb"}"""
     )
     cases.foreach { change =>
       val message = rejectionMessage(repoWithChange(change))

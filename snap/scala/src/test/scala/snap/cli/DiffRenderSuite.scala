@@ -76,6 +76,26 @@ class DiffRenderSuite extends munit.FunSuite:
     )
   }
 
+  // T23 (holdout exposure 4): a PURE-TEXT full-file deletion — a multi-line text file deleted, no
+  // binary content anywhere in the case — was traced correct by hand but never exercised at the
+  // integration level; test 06's own delete case is binary-only. Renders as a whole-file unified
+  // block with a `/dev/null` new-side header (R87), every old line as a bulk `delete` (§5: the new
+  // side is exhausted, so the walk deletes the remainder), no `\ No newline...` marker since every
+  // line here ends in LF.
+  test("golden: a pure-text multi-line full-file deletion (untested by the provided suite)") {
+    val oldTree = tree("f" -> "a\nb\nc\n")
+    assertEquals(
+      DiffRender.render(oldTree, Tree.empty),
+      """--- a/f
+        |+++ /dev/null
+        |@@ -1,3 +1,0 @@
+        |-a
+        |-b
+        |-c
+        |""".stripMargin
+    )
+  }
+
   // ------------------------------------------------------------------ missing-final-LF (both sides)
 
   test("a missing final LF on BOTH the deleted and the inserted side each get their own marker") {

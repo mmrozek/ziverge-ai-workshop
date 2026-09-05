@@ -29,11 +29,16 @@ object CommandsInit:
     * (legal but bizarre) directory name — the coarse reading of R79's "unknown options... are
     * errors" for a command with zero defined options. An explicit empty-string operand is rejected
     * too (T13/CR14: `snap init ""` must not silently default to `.` the way a genuinely absent
-    * operand does) — [[Grammar.initRule]] already rejects both shapes before this handler is ever
-    * reached from [[Cli.run]]; the same guard is kept here so the handler is correct on its own,
-    * not only behind that gate (e.g. a test or future caller invoking [[handler]] directly).
+    * operand does).
+    *
+    * The ONE canonical shape parser for `init` (T23, phase-2 review finding 3):
+    * [[Grammar.initRule]] used to mirror this exact pattern match independently, so a one-sided
+    * edit could silently change which of the two decided an outcome, with no compiler or test
+    * signal (the handler-side copy was unreachable through [[Cli.run]], since `Grammar.check`
+    * always runs first). `Grammar` now calls this function directly instead of re-declaring the
+    * shape, so there is exactly one place that decides whether an `init` operand list is legal.
     */
-  private def parsePath(operands: List[String]): Either[SnapError, String] = operands match
+  private[cli] def parsePath(operands: List[String]): Either[SnapError, String] = operands match
     case Nil                                                    => Right(".")
     case path :: Nil if path.nonEmpty && !path.startsWith("--") => Right(path)
     case _                                                      => Left(SnapError.InvalidCommand)

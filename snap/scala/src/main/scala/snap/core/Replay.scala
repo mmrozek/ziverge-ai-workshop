@@ -235,13 +235,19 @@ object Replay:
     * non-recursive call from a different method — invisible to `@tailrec`'s self-call check — and
     * is itself O(1) stack for the same reason: it is `loop` again, so its internal iteration is
     * exactly as flat, however large that sub-selection is. `ReplayStackSafetySlowSuite` pins both a
-    * deep linear history (worst case for repeated cache-miss sub-replays: the outer loop never
-    * memoizes a version under its own key, only `materializeMemo`'s cache-miss branch does, so
-    * computing patch k's base re-walks the prefix) and a deep concurrent history (repeated
-    * conflicting diamonds), well past the ~1k-patch threshold that reproduced the pre-fix crash.
-    * (Replay is Θ(n²) in patch count — D19, an accepted, T23-deferred trade-off — so that suite
-    * runs at a bounded depth, not ~5000+, and is excluded from the default `sbt test` task; see its
-    * own doc and `build.sbt`'s `slowTest` alias.)
+    * deep linear history and a deep concurrent history (repeated conflicting diamonds), well past
+    * the ~1k-patch threshold that reproduced the pre-fix crash.
+    *
+    * **Θ(n²) → O(n) (T23, phase-1 review PR5/CR1 performance half, re-measured after T16's engine
+    * landed — 800 patches took ~7.5s, matching the review's original ~9.3s order of magnitude):**
+    * every successful integration below now ALSO stores `nextCanonical` into the memo under its own
+    * result version (`newProgress`), not just the base-tree cache-miss branch in
+    * [[materializeMemo]]. In a linear history a patch's declared base is exactly the prior step's
+    * `newProgress`, so before this change every `materializeMemo` probe for it was a cache MISS,
+    * re-walking the entire prefix from scratch (Σ(k−1) ≈ n²/2 integrations across a run) — the
+    * outer loop was computing that exact tree one line above and simply never recording it under
+    * its own key. `materialize(V)` is deterministic in `V` alone (R12/R13/R76), so recording it
+    * here changes no result, only which of the two population points a later probe happens to hit.
     */
   @tailrec
   private def loop(
@@ -268,14 +274,24 @@ object Replay:
                 integrate(next.patch, baseTree, authored, canonical) match
                   case Left(err)                           => Left(err)
                   case Right((nextCanonical, newWarnings)) =>
+                    val newProgress = progress.join(next.result)
                     loop(
                       valid,
                       pending.filterNot(_.patch.dot == next.patch.dot),
-                      progress.join(next.result),
+                      newProgress,
                       nextCanonical,
                       order :+ next.patch.dot,
                       warnings ++ newWarnings,
-                      memo1
+                      // T23 (phase-1 review PR5/CR1, the performance half — re-measured: 800
+                      // patches took ~7.5s before this change): the outer loop already knows
+                      // `materialize(newProgress) == nextCanonical` (R12/R13/R76 — the same patch
+                      // set and version always produce the same tree, however it was reached), so
+                      // storing it here turns any LATER `materializeMemo` probe for this exact
+                      // version into a memo hit instead of a full sub-replay. In a linear history a
+                      // patch's base is exactly the prior step's `newProgress`, so this alone
+                      // collapses the ready-loop from Θ(n²) integrations to O(n) — each base is
+                      // computed once, by the step that already held its tree, never re-walked.
+                      memo1.updated(newProgress, nextCanonical)
                     )
 
   /** Materializes a base version through the memo (D19): each version's tree is computed at most
@@ -560,7 +576,7 @@ object Replay:
         else Left(SnapError.DeleteOfAbsentPath(path))
       case Change.Put(path, content) =>
         base.get(path) match
-          case Some(existing) if bytesEqual(existing, content) =>
+          case Some(existing) if ByteArrays.equal(existing, content) =>
             Left(SnapError.NoOpChange(path))
           case _ => Right(acc.updated(path, content))
       case Change.Text(path, edit) =>
@@ -593,12 +609,4 @@ object Replay:
     IArray.unsafeFromArray(TextTokens.render(tokens).getBytes(StandardCharsets.UTF_8))
 
   private def sameEntry(a: Option[IArray[Byte]], b: Option[IArray[Byte]]): Boolean =
-    (a, b) match
-      case (None, None)       => true
-      case (Some(x), Some(y)) => bytesEqual(x, y)
-      case _                  => false
-
-  // Byte-content equality, module-local like `Tree`'s and `Change`'s (kept private per file rather
-  // than exposing one file's internals across the package).
-  private def bytesEqual(a: IArray[Byte], b: IArray[Byte]): Boolean =
-    a.length == b.length && (0 until a.length).forall(i => a(i) == b(i))
+    ByteArrays.equalOption(a, b)

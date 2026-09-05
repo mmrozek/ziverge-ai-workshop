@@ -1,6 +1,5 @@
 package snap.core
 
-import scala.annotation.tailrec
 import scala.collection.immutable.TreeMap
 
 /** An immutable tracked tree: a path → content-bytes map (SPEC §2), iterated exclusively in
@@ -51,14 +50,14 @@ final class Tree private (private val entries: TreeMap[SnapPath, IArray[Byte]]):
     case other: Tree =>
       entries.size == other.entries.size &&
       entries.iterator.zip(other.entries.iterator).forall { case ((pa, ba), (pb, bb)) =>
-        pa == pb && Tree.bytesEqual(ba, bb)
+        pa == pb && ByteArrays.equal(ba, bb)
       }
     case _ => false
 
   /** Deterministic across runs: folds sorted entries; no identity hashes. */
   override def hashCode: Int =
     entries.iterator.foldLeft(7) { case (acc, (p, b)) =>
-      31 * (31 * acc + p.hashCode) + Tree.bytesHash(b)
+      31 * (31 * acc + p.hashCode) + ByteArrays.hash(b)
     }
 
   override def toString: String =
@@ -72,16 +71,3 @@ object Tree:
     */
   def from(entries: Iterable[(SnapPath, IArray[Byte])]): Tree =
     entries.foldLeft(empty) { case (tree, (path, bytes)) => tree.updated(path, bytes) }
-
-  private def bytesEqual(a: IArray[Byte], b: IArray[Byte]): Boolean =
-    a.length == b.length && bytesEqualFrom(a, b, 0)
-
-  @tailrec
-  private def bytesEqualFrom(a: IArray[Byte], b: IArray[Byte], i: Int): Boolean =
-    i >= a.length || (a(i) == b(i) && bytesEqualFrom(a, b, i + 1))
-
-  private def bytesHash(bytes: IArray[Byte]): Int = bytesHashFrom(bytes, 0, 1)
-
-  @tailrec
-  private def bytesHashFrom(bytes: IArray[Byte], i: Int, acc: Int): Int =
-    if i >= bytes.length then acc else bytesHashFrom(bytes, i + 1, 31 * acc + bytes(i))

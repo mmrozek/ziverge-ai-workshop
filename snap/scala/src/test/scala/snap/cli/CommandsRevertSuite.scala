@@ -162,6 +162,27 @@ class CommandsRevertSuite extends munit.FunSuite:
     assert(err.contains("unknown version"), err)
   }
 
+  // ------------------------------------------------- invalid version syntax (T23, holdout exp. 3)
+
+  test(
+    "a syntactically invalid version operand uses the SAME 'invalid version:' class diff uses " +
+      "(T23: aligned so a holdout testing both commands sees identical wording, R31)"
+  ) {
+    val root = initRepo()
+    val (exit, out, err) = run(root, "revert", "not-a-version")
+    assertEquals(exit, 1)
+    assertEquals(out, "")
+    assertEquals(err, "snap: invalid version: not-a-version\n")
+  }
+
+  test("a leading-zero revision in the version operand is also the 'invalid version:' class") {
+    val root = initRepo()
+    val (exit, out, err) = run(root, "revert", "(a@x->01)")
+    assertEquals(exit, 1)
+    assertEquals(out, "")
+    assertEquals(err, "snap: invalid version: (a@x->01)\n")
+  }
+
   // -------------------------------------------------------------------------- mutation order
 
   test(

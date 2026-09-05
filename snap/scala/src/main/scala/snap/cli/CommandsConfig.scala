@@ -30,7 +30,18 @@ object CommandsConfig:
       _ <- Store.writeConfig(target, id)
     yield CommandOutput(ResultKind.Raw, "")
 
-  private def parseOperands(operands: List[String]): Either[SnapError, (Boolean, String)] =
+  /** The ONE canonical shape parser for `config` (T23, phase-2 review finding 3):
+    * [[Grammar .configRule]] used to mirror this exact pattern match independently, "duplicated
+    * intentionally" per its own prior doc comment — a one-sided edit could silently change which of
+    * the two decided an outcome, with no compiler or test signal, since the handler-side copy was
+    * unreachable through [[Cli.run]] ([[Grammar.check]] always runs first, per CR7). `Grammar` now
+    * calls this function directly instead of re-declaring the shape, so there is exactly one place
+    * that decides whether a `config` operand list is legal — CR7's ordering requirement (this gate
+    * must run BEFORE repository discovery) is unaffected, since `Grammar.configRule` still runs
+    * from [[Cli.run]] ahead of [[Command.needsRepoDiscovery]], just via this shared function rather
+    * than its own copy.
+    */
+  private[cli] def parseOperands(operands: List[String]): Either[SnapError, (Boolean, String)] =
     operands match
       case ContributorIdLiteral :: id :: Nil               => Right((false, id))
       case "--global" :: ContributorIdLiteral :: id :: Nil => Right((true, id))

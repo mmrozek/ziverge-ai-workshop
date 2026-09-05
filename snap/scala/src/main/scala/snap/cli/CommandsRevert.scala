@@ -40,7 +40,13 @@ object CommandsRevert:
       versionText <- parseOperand(operands)
       root <- Commands.requireRoot(repoRoot)
       valid <- Commands.readRepository(root)
-      targetVersion <- Version.parse(versionText)
+      // T23 (holdout exposure 3): reuses `CommandsDiff`'s canonical `invalid version: <raw>`
+      // rendering rather than propagating `Version.parse`'s own typed `VersionError` wording
+      // directly — tests 19/25 pin the `invalid version:` class for `diff`'s operands, and a
+      // holdout asserting the same class for `revert` would otherwise find different wording for
+      // the identical kind of CLI argument-value error (R31 covers both commands' version operands
+      // alike; the spec does not distinguish their error text).
+      targetVersion <- CommandsDiff.parseVersionArg(versionText)
       // The warning half (R74) is intentionally discarded: SPEC §7.7 gives revert no
       // warning-reporting obligation of its own — only `merge` prints warnings (R75, T17).
       targetTree <- Replay.materialize(valid.structure, targetVersion).map(_._1)

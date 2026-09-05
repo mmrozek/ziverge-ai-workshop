@@ -7,7 +7,9 @@ import snap.core.Patch
 import snap.core.Revision
 import snap.core.SnapError
 import snap.core.SnapPath
+import snap.core.Tree
 import snap.core.Version
+import snap.fs.Store
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -253,6 +255,21 @@ class CommandsCommitSuite extends munit.FunSuite:
     assertEquals(CommandsCommit.nextRevision(five, bob), Right(1L))
   }
 
+  test(
+    "the serial-contributor commit guard (R37): three sequential commits by the same author " +
+      "produce exactly the gapless run 1, 2, 3 — never a skip, a repeat, or an out-of-order value"
+  ) {
+    val root = initRepo("a@x")
+    write(root, "f", "1\n")
+    assertEquals(run(root, "commit", "first"), (0, "(a@x->1)\n", ""))
+    write(root, "f", "2\n")
+    assertEquals(run(root, "commit", "second"), (0, "(a@x->2)\n", ""))
+    write(root, "f", "3\n")
+    assertEquals(run(root, "commit", "third"), (0, "(a@x->3)\n", ""))
+    val history = Store.readRepository(Commands.repositoryFile(root)).toOption.get
+    assertEquals(history.repository.patches.map(_.revision), Vector(1L, 2L, 3L))
+  }
+
   test("a frontier already at 2^53−1 overflows: the next revision is out of bounds (R30/R85)") {
     val alice = id("a@x")
     val max = Version.fromMap(Map(alice -> Revision.Max)).toOption.get
@@ -298,4 +315,51 @@ class CommandsCommitSuite extends munit.FunSuite:
       CommandsCommit.insertSorted(Vector(a1, b1), b2).map(_.dot),
       Vector(Dot(id("a@x"), 1L), Dot(id("b@x"), 1L), Dot(id("b@x"), 2L))
     )
+  }
+
+  // ------------------------------------------ requireChangesReproduceWorking (T23, mirrors revert)
+
+  // phase-2 review's "new" finding (same class as finding #1, a different second source of truth):
+  // `commit`'s defensive `Repo.validateFully(next)` gate must compare its own replayed tree against
+  // `working` (the tree `WorkTree.scan` actually read off disk), not just discard it. This is
+  // genuinely unreachable through any public API today (`buildChanges` derives every change from the
+  // one canonical diff between the current tree and `working`, so replaying the new patch over the
+  // current tree reproduces `working` by construction — see the doc comment on
+  // `requireChangesReproduceWorking`), so these tests drive the comparison helper directly, exactly
+  // as `CommandsRevertSuite` does for `requireReplayMatchesInstalled`.
+
+  test("requireChangesReproduceWorking: equal trees are a silent no-op") {
+    val tree = Tree.from(Vector(path("f") -> bytes("content")))
+    CommandsCommit.requireChangesReproduceWorking(tree, tree)
+  }
+
+  test(
+    "requireChangesReproduceWorking: structurally equal trees built independently are still a " +
+      "no-op (Tree equality is by content, not identity)"
+  ) {
+    val a = Tree.from(Vector(path("f") -> bytes("content")))
+    val b = Tree.from(Vector(path("f") -> bytes("content")))
+    CommandsCommit.requireChangesReproduceWorking(a, b)
+  }
+
+  test(
+    "requireChangesReproduceWorking: a mismatch throws (never a SnapError/Left) — the sole " +
+      "sanctioned route to D4's exit-2 top-level catch-all, not a normal exit-1 diagnostic"
+  ) {
+    val replayed = Tree.from(Vector(path("f") -> bytes("replayed")))
+    val working = Tree.from(Vector(path("f") -> bytes("working")))
+    intercept[IllegalStateException] {
+      CommandsCommit.requireChangesReproduceWorking(replayed, working)
+    }
+  }
+
+  test(
+    "requireChangesReproduceWorking: a working-only path (missing from the replay) is also a " +
+      "mismatch, not just differing content"
+  ) {
+    val replayed = Tree.empty
+    val working = Tree.from(Vector(path("f") -> bytes("working")))
+    intercept[IllegalStateException] {
+      CommandsCommit.requireChangesReproduceWorking(replayed, working)
+    }
   }

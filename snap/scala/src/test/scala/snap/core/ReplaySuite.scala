@@ -412,3 +412,42 @@ class ReplaySuite extends FunSuite:
       Replay.integrationOrder(valid, frontier)
     )
   }
+
+  // --- performance regression guard (T23, phase-1 review PR5/CR1) ---
+
+  /** A single-author chain of `count` patches, each creating one new distinct path and depending on
+    * exactly its immediate predecessor — the worst case for base-tree re-materialization before
+    * this task's fix (every patch's base was a memo cache-miss, re-walking the whole prefix from
+    * scratch, Θ(n²) total). Mirrors `ReplayStackSafetySlowSuite.deepLinearHistory`, at a size the
+    * FAST default suite can afford (that suite's own 1500-patch case is `*SlowSuite`-only for
+    * exactly this pre-fix cost; this one runs in well under a second post-fix).
+    */
+  private def deepLinearHistory(count: Int): (Repo.StructurallyValid, Version) =
+    val author = "a@x"
+    val patches = (1 to count).iterator.map { i =>
+      val base = if i == 1 then Version.empty else v(author -> (i - 1).toLong)
+      patch(author, i.toLong, base, put(s"f$i", s"v$i\n"))
+    }.toVector
+    val frontier = v(author -> count.toLong)
+    (validated(frontier, patches*), frontier)
+
+  test(
+    "a deep linear history of 800 patches materializes correctly, well under the pre-fix time " +
+      "(measured pre-fix: ~7.5s for 800 patches; post-fix: well under 1s) — regression guard for " +
+      "phase-1 review PR5/CR1's Θ(n²) finding, fixed by this task"
+  ) {
+    val count = 800
+    val (valid, frontier) = deepLinearHistory(count)
+    val start = System.nanoTime()
+    val result = Replay.materialize(valid, frontier)
+    val elapsedMs = (System.nanoTime() - start) / 1000000L
+    result match
+      case Right((tree, warnings)) =>
+        assertEquals(tree.paths.size, count)
+        assertEquals(warnings, noWarnings)
+      case Left(err) => fail(s"expected successful materialization, got $err")
+    // Generous ceiling (post-fix measured ~50-100ms locally): catches a full regression back to
+    // Θ(n²) — which took ~7.5s at this exact size — without being sensitive to ordinary machine
+    // variance at the post-fix scale.
+    assert(elapsedMs < 5000L, s"expected well under 5000ms post-fix, took ${elapsedMs}ms")
+  }

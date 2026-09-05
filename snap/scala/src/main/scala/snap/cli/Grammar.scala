@@ -52,25 +52,24 @@ object Grammar:
     * paths"). CR14: an explicit empty-string operand is also rejected here, rather than reaching
     * [[CommandsInit]]'s "defaults to `.`" substitution, which SPEC §7.1 only licenses when the
     * operand is genuinely absent — `snap init ""` must not silently initialize the cwd.
+    *
+    * Delegates to [[CommandsInit.parsePath]] — the ONE canonical shape parser (T23, phase-2 review
+    * finding 3): this rule used to re-declare the same pattern match independently, so a one-sided
+    * edit could silently change which of the two decided an outcome, with no compiler or test
+    * signal.
     */
-  private def initRule(operands: List[String]): Either[SnapError, Unit] = operands match
-    case Nil                                                    => ok
-    case path :: Nil if path.nonEmpty && !path.startsWith("--") => ok
-    case _                                                      => invalidCommand
-
-  private val ContributorIdLiteral = "contributor.id"
+  private def initRule(operands: List[String]): Either[SnapError, Unit] =
+    CommandsInit.parsePath(operands).map(_ => ())
 
   /** `snap config [--global] contributor.id <id>` (SPEC §7.2): exactly the two documented shapes.
-    * Mirrors [[CommandsConfig.parseOperands]]'s own pattern (kept there too, for the command's
-    * internal typed parse) — duplicated intentionally so this gate runs before repository discovery
+    * Delegates to [[CommandsConfig.parseOperands]] — the ONE canonical shape parser (T23, phase-2
+    * review finding 3; see its doc comment) — so this gate still runs before repository discovery
     * (CR7): a non-`--global` `config` command currently discovers a repository before its handler
     * is ever invoked ([[Command.needsRepoDiscovery]]), so without this earlier gate a
     * grammar-invalid `config` outside any repository would wrongly report `not a Snap repository`.
     */
-  private def configRule(operands: List[String]): Either[SnapError, Unit] = operands match
-    case ContributorIdLiteral :: _ :: Nil               => ok
-    case "--global" :: ContributorIdLiteral :: _ :: Nil => ok
-    case _                                              => invalidCommand
+  private def configRule(operands: List[String]): Either[SnapError, Unit] =
+    CommandsConfig.parseOperands(operands).map(_ => ())
 
   /** `snap status` / `snap log` (SPEC §7.3–§7.4): no operands, no options. */
   private def noOperandsRule(operands: List[String]): Either[SnapError, Unit] = operands match
@@ -100,15 +99,13 @@ object Grammar:
       case _                                       => invalidCommand
 
   /** `snap diff [<old> <new> [--repo <repository>]]` (SPEC §7.6): the three documented shapes.
-    * Mirrors [[CommandsDiff]]'s own match exactly, but returns [[SnapError.DiffUsage]] instead of
-    * the generic [[SnapError.InvalidCommand]] on failure — `diff`'s distinct usage channel (DESIGN
-    * §8; tests 14/24).
+    * Delegates to [[CommandsDiff.parseShape]] — the ONE canonical shape parser (T23, phase-2 review
+    * finding 3) — which already reports [[SnapError.DiffUsage]] instead of the generic
+    * [[SnapError.InvalidCommand]] on failure — `diff`'s distinct usage channel (DESIGN §8; tests
+    * 14/24).
     */
-  private def diffRule(operands: List[String]): Either[SnapError, Unit] = operands match
-    case Nil                            => ok
-    case _ :: _ :: Nil                  => ok
-    case _ :: _ :: "--repo" :: _ :: Nil => ok
-    case _                              => Left(SnapError.DiffUsage)
+  private def diffRule(operands: List[String]): Either[SnapError, Unit] =
+    CommandsDiff.parseShape(operands).map(_ => ())
 
   /** `snap --serve [port]` (SPEC §7.9): at most one operand, no options. A `--`-prefixed operand is
     * an unknown-option grammar error, matching [[initRule]]/[[oneFreeTextOperandRule]] (phase-2

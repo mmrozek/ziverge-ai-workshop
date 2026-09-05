@@ -1,7 +1,6 @@
 package snap.core
 
 import java.nio.charset.StandardCharsets
-import scala.annotation.tailrec
 
 /** Patch identity (SPEC §4.2, R10/R46): the pair `(author, revision)`. */
 final case class Dot(author: ContributorId, revision: Long):
@@ -28,29 +27,14 @@ object Change:
     */
   final case class Put(path: SnapPath, content: IArray[Byte]) extends Change:
     override def equals(that: Any): Boolean = that match
-      case other: Put => path == other.path && bytesEqual(content, other.content)
+      case other: Put => path == other.path && ByteArrays.equal(content, other.content)
       case _          => false
 
     /** Deterministic across runs: folds content bytes; no identity hashes. */
-    override def hashCode: Int = 31 * path.hashCode + bytesHash(content)
+    override def hashCode: Int = 31 * path.hashCode + ByteArrays.hash(content)
 
   /** Delete of a present path (R50). */
   final case class Delete(path: SnapPath) extends Change
-
-  // Byte-content helpers mirroring `Tree`'s private ones (kept module-local rather than exposing
-  // T04's internals across files).
-  private def bytesEqual(a: IArray[Byte], b: IArray[Byte]): Boolean =
-    a.length == b.length && bytesEqualFrom(a, b, 0)
-
-  @tailrec
-  private def bytesEqualFrom(a: IArray[Byte], b: IArray[Byte], i: Int): Boolean =
-    i >= a.length || (a(i) == b(i) && bytesEqualFrom(a, b, i + 1))
-
-  private def bytesHash(bytes: IArray[Byte]): Int = bytesHashFrom(bytes, 0, 1)
-
-  @tailrec
-  private def bytesHashFrom(bytes: IArray[Byte], i: Int, acc: Int): Int =
-    if i >= bytes.length then acc else bytesHashFrom(bytes, i + 1, 31 * acc + bytes(i))
 
 /** A patch (SPEC §4.2): one contributor's increment over an exact base version. Construction only
   * through [[Patch.make]], which enforces the value rules of §4.5 step 1 — revision bounds (R30),
