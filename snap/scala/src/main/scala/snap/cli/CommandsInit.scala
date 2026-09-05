@@ -22,7 +22,7 @@ object CommandsInit:
       _ <- Store.createDirectories(target)
       _ <- Store.createDirectories(snapDir(target))
       _ <- Store.writeRepository(repositoryFile(target), Repository.empty)
-    yield "()\n"
+    yield CommandOutput(ResultKind.Success("Initialized repository"), "()\n")
 
   /** `init`'s only operand is an optional path (SPEC §7.1: "`path` defaults to `.`"); it takes no
     * options at all, so a single `--`-shaped operand is rejected here rather than accepted as a

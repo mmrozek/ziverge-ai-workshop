@@ -158,5 +158,8 @@ class CommandsInitSuite extends FunSuite:
     val root = tempDir()
     val fx = TestEnv(cwd = root)
     val result = CommandsInit.handler(fx.env, Some(Path.of("/irrelevant")), Nil)
-    assertEquals(result, Right("()\n"))
+    assertEquals(
+      result,
+      Right(CommandOutput(ResultKind.Success("Initialized repository"), "()\n"))
+    )
   }

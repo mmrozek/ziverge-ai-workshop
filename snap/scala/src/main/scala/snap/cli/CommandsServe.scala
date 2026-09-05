@@ -52,15 +52,16 @@ object CommandsServe:
       // Installed BEFORE the ready line is printed (see the class doc's race note): once the line
       // is visible, a caller may signal us at any moment, so the handlers must already be live.
       Server.installShutdownHandlers()
-      // R96: the ready line is always plain, regardless of any future terminal presentation
-      // selection (T22) — bypassing whatever per-stream renderer `Cli.emit` would otherwise choose,
-      // by construction (`Presentation.Plain` is named directly, not looked up).
-      Presentation.Plain.result(env, Server.readyLine(instance.port))
+      // R96: the ready line is always plain, regardless of the per-stream terminal presentation
+      // (T22) `Cli.emit` would otherwise choose for this invocation — bypassing it entirely, by
+      // construction (`Presentation.Plain` is named directly, never looked up via `Presenters`).
+      // `ResultKind.Raw` is inert either way: `Plain.result` ignores its `kind` argument completely.
+      Presentation.Plain.result(env, ResultKind.Raw, Server.readyLine(instance.port))
       // Explicit flush, independent of the sink's own autoFlush setting (Env.real's PrintStream
       // already autoflushes on the embedded LF, but this must hold for any Env, including test
       // fixtures) — SPEC-NOTES §3.3: "the URL line must be flushed unbuffered".
       env.stdout.flush()
-      // Never returns in production (see the class doc); type `Nothing` conforms to `String`.
+      // Never returns in production (see the class doc); type `Nothing` conforms to `CommandOutput`.
       Server.blockForever()
 
   /** SPEC §7.9 / D9: the operand defaults to 8765 when absent; otherwise it must be a canonical

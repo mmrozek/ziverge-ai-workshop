@@ -28,7 +28,7 @@ object CommandsConfig:
       id <- ContributorId.parse(rawId)
       target <- targetFile(env, repoRoot, isGlobal)
       _ <- Store.writeConfig(target, id)
-    yield ""
+    yield CommandOutput(ResultKind.Raw, "")
 
   private def parseOperands(operands: List[String]): Either[SnapError, (Boolean, String)] =
     operands match

@@ -15,14 +15,36 @@ trait Tty:
 
 object Tty:
 
-  /** Placeholder until T22 wires the real probe (D20: a child `/bin/sh -c "test -t N"` process with
-    * fd inheritance — the JDK has no per-stream `isatty`). Always reports non-TTY, which matches
-    * what the harness observes anyway, so `SNAP_COLOR=auto` degrades to plain either way before T22
-    * lands.
+  /** Fixed non-TTY fixture for unit tests that don't care about TTY selection (most of them —
+    * R108's matrix injects its own fakes for the cases that do).
     */
   case object Stub extends Tty:
     def isStdoutTty: Boolean = false
     def isStderrTty: Boolean = false
+
+  /** D20's real probe, wired into [[Env.real]] as of T22: the JDK has no per-stream `isatty`, so
+    * each check spawns a child `/bin/sh -c "test -t N"` with `Redirect.INHERIT` on exactly the file
+    * descriptor under test — the child's fd *is* ours, so its own `test -t` answers for our stream.
+    * Exit code 0 means that stream is a terminal. The other two child streams are discarded so the
+    * probe never echoes anything of its own onto our stdout/stderr. Each `def` spawns fresh — never
+    * memoized — which is what keeps probing lazy: [[Presentation.select]] only ever calls these
+    * methods from its `auto`-and-`NO_COLOR`-absent branch, so a `never`/`always` selection or a
+    * present `NO_COLOR` spawns no subprocess at all (R93/R108's negative constraint).
+    */
+  case object Real extends Tty:
+    def isStdoutTty: Boolean = probe(fd = 1)
+    def isStderrTty: Boolean = probe(fd = 2)
+
+    private def probe(fd: Int): Boolean =
+      val builder = new ProcessBuilder("/bin/sh", "-c", s"test -t $fd")
+      if fd == 1 then
+        builder.redirectOutput(ProcessBuilder.Redirect.INHERIT)
+        builder.redirectError(ProcessBuilder.Redirect.DISCARD)
+      else
+        builder.redirectError(ProcessBuilder.Redirect.INHERIT)
+        builder.redirectOutput(ProcessBuilder.Redirect.DISCARD)
+      val process = builder.start()
+      process.waitFor() == 0
 
 /** The effect boundary (DESIGN §2/§8), built exactly once in [[Main]] from real process state.
   * Everything below `Main` takes an `Env` value — no `sys.env`/`System.getenv` call exists anywhere
@@ -39,7 +61,8 @@ object Tty:
   * @param stderr
   *   UTF-8 sink for warnings/errors (D22)
   * @param tty
-  *   per-stream TTY probe (real probe lands in T22; [[Tty.Stub]] until then)
+  *   per-stream TTY probe ([[Tty.Real]] in production as of T22; tests inject [[Tty.Stub]] or a
+  *   fake)
   */
 final case class Env(
     cwd: Path,
@@ -63,5 +86,5 @@ object Env:
       env = sys.env,
       stdout = new PrintStream(System.out, true, StandardCharsets.UTF_8),
       stderr = new PrintStream(System.err, true, StandardCharsets.UTF_8),
-      tty = Tty.Stub
+      tty = Tty.Real
     )

@@ -65,7 +65,7 @@ object CommandsRevert:
       _ = requireReplayMatchesInstalled(validated.tree, targetTree)
       _ <- Materialize.install(root, valid.tree, targetTree)
       _ <- Store.writeRepository(Commands.repositoryFile(root), next)
-    yield result.canonicalText + "\n"
+    yield CommandOutput(ResultKind.Success("Reverted"), result.canonicalText + "\n")
 
   /** Exactly one operand — the target version's canonical text (T13 owns the exhaustive grammar
     * matrix; this coarse arity check mirrors [[CommandsCommit.parseMessage]]/

@@ -49,15 +49,30 @@ object Command:
   private def isGlobalConfig(operands: List[String]): Boolean =
     operands.headOption.contains("--global")
 
+/** A command handler's successful outcome (T22): the fully-formatted stdout text in §7.11's plain
+  * shape (unchanged by presentation selection, R92), the [[ResultKind]] tag a terminal renderer
+  * needs to restyle that text, and zero or more warning details (R75, without the `warning: `
+  * prefix) to print to stderr first. Every command but `merge` has an empty `warnings` vector. No
+  * handler ever touches `env.stdout`/`env.stderr` directly (`--serve`'s ready line is the one
+  * documented exception, R96) — [[Cli.emit]] is the sole place either field is actually printed,
+  * through whichever [[Presentation]] was selected for each stream, so warning order is identical
+  * in plain and terminal mode by construction.
+  */
+final case class CommandOutput(
+    kind: ResultKind,
+    text: String,
+    warnings: Vector[String] = Vector.empty
+)
+
 /** A handler for one command: given the effect boundary, the discovered repository root (`None`
   * when the command doesn't need one, per [[Command.needsRepoDiscovery]]), and the command's own
-  * operands (unvalidated past [[Cli.parse]]'s coarse check), produce either the command's stdout
-  * text or a [[SnapError]]. Every command in the map has this exact shape, which is what lets later
-  * tasks swap a stub for a real implementation without touching [[Cli.run]]. Operands were added in
-  * T09: `init`/`config` are the first handlers that need their own arguments (T08's stub never
-  * did).
+  * operands (unvalidated past [[Cli.parse]]'s coarse check), produce either the command's
+  * [[CommandOutput]] or a [[SnapError]]. Every command in the map has this exact shape, which is
+  * what lets later tasks swap a stub for a real implementation without touching [[Cli.run]].
+  * Operands were added in T09: `init`/`config` are the first handlers that need their own arguments
+  * (T08's stub never did).
   */
-type CommandHandler = (Env, Option[Path], List[String]) => Either[SnapError, String]
+type CommandHandler = (Env, Option[Path], List[String]) => Either[SnapError, CommandOutput]
 
 /** A recognized command line, past the coarse grammar checks [[Cli.parse]] can make on its own.
   * `operands` are the remaining tokens, unvalidated — each command's exact arity/option grammar
@@ -114,13 +129,18 @@ object Cli:
     * top-level catch-all for exit 2 lives in `Main`, not here, since it must also catch anything
     * `run` itself fails to anticipate). Order, per the task and R95/gotcha 9:
     *   1. validate `SNAP_COLOR` (cheap — reads the already-captured `Env.env` map, so it's not the
-    *      "eager work" gotcha 9 forbids) — before *any* command, including `--version` (test 28);
-    *   2. parse the command line;
-    *   3. `--version` short-circuits with no repo discovery;
-    *   4. [[Grammar]]'s exhaustive per-command matrix (R79, T13) — BEFORE repository discovery or
+    *      "eager work" gotcha 9 forbids) — before *any* command, including `--version` (test 28).
+    *      An invalid value is reported through [[Presentation.Plain]] directly, never through a
+    *      selected [[Presenters]]: R95's own text is "plain because no valid presentation was
+    *      selected" — [[Presentation.select]] requires a value this branch has just rejected;
+    *   2. once `SNAP_COLOR` is known valid, select this invocation's per-stream presentation ONCE
+    *      (T22, R93–R95) — every result/warning/error below funnels through it via [[emit]];
+    *   3. parse the command line;
+    *   4. `--version` short-circuits with no repo discovery;
+    *   5. [[Grammar]]'s exhaustive per-command matrix (R79, T13) — BEFORE repository discovery or
     *      any other filesystem IO (phase-1 review CR7): a grammar error in a non-repository
     *      directory must print the grammar error, never `not a Snap repository`;
-    *   5. every other command resolves a repository first when it needs one (R77), then dispatches.
+    *   6. every other command resolves a repository first when it needs one (R77), then dispatches.
     */
   def run(
       env: Env,
@@ -128,11 +148,15 @@ object Cli:
       commands: Map[Command, CommandHandler] = defaultCommands
   ): Int =
     validateSnapColor(env) match
-      case Left(err) => emit(env, Left(err))
+      case Left(err) =>
+        Presentation.Plain.error(env, err.message)
+        1
       case Right(()) =>
+        val presenters = Presentation.select(env)
         parse(args) match
-          case Left(err)                                    => emit(env, Left(err))
-          case Right(ParsedCommand(Command.Version, _))     => emit(env, Right(versionOutput))
+          case Left(err)                                => emit(env, presenters, Left(err))
+          case Right(ParsedCommand(Command.Version, _)) =>
+            emit(env, presenters, Right(CommandOutput(ResultKind.VersionLine, versionOutput)))
           case Right(parsed @ ParsedCommand(cmd, operands)) =>
             val outcome =
               Grammar
@@ -142,7 +166,7 @@ object Cli:
                    else Right(None))
                     .flatMap(root => commands(cmd)(env, root, operands))
                 }
-            emit(env, outcome)
+            emit(env, presenters, outcome)
 
   /** Coarse command-line grammar (R79): recognizes the command surface and the one arity rule T08
     * itself needs (`--version` takes no operands). Everything else — per-command arity, option
@@ -183,11 +207,22 @@ object Cli:
           case None         => Left(SnapError.NotASnapRepository)
     loop(env.cwd.toAbsolutePath.normalize())
 
-  private def emit(env: Env, outcome: Either[SnapError, String]): Int =
+  /** The one place any command's result, warnings, or error actually reach a stream (besides
+    * `--serve`'s deliberately-exempt ready line, R96): errors and warnings render through
+    * `presenters.stderr`, results through `presenters.stdout` — both already selected by [[run]]
+    * before this is ever called. Warnings print in [[CommandOutput.warnings]]'s own order, always
+    * before the result line, in both presentations (R92).
+    */
+  private def emit(
+      env: Env,
+      presenters: Presenters,
+      outcome: Either[SnapError, CommandOutput]
+  ): Int =
     outcome match
       case Left(err) =>
-        Presentation.Plain.error(env, err.message)
+        presenters.stderr.error(env, err.message)
         1
-      case Right(text) =>
-        Presentation.Plain.result(env, text)
+      case Right(CommandOutput(kind, text, warnings)) =>
+        warnings.foreach(presenters.stderr.warning(env, _))
+        presenters.stdout.result(env, kind, text)
         0

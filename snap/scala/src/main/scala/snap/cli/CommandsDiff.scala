@@ -39,7 +39,7 @@ object CommandsDiff:
           root <- Commands.requireRoot(repoRoot)
           valid <- Commands.readRepository(root)
           working <- WorkTree.scan(root)
-        yield DiffRender.render(valid.tree, working)
+        yield CommandOutput(ResultKind.Diff, DiffRender.render(valid.tree, working))
       case oldText :: newText :: Nil =>
         for
           oldVersion <- parseVersionArg(oldText)
@@ -53,7 +53,7 @@ object CommandsDiff:
           // by `Store`/`Repo` for that exact reason).
           oldReplay <- Replay.materialize(valid.structure, oldVersion)
           newReplay <- Replay.materialize(valid.structure, newVersion)
-        yield DiffRender.render(oldReplay._1, newReplay._1)
+        yield CommandOutput(ResultKind.Diff, DiffRender.render(oldReplay._1, newReplay._1))
       case oldText :: newText :: "--repo" :: repoOperand :: Nil =>
         for
           oldVersion <- parseVersionArg(oldText)
@@ -67,7 +67,7 @@ object CommandsDiff:
           _ <- CommandsMerge.unionPatches(local.repository.patches, remote.repository.patches)
           oldReplay <- Replay.materialize(local.structure, oldVersion)
           newReplay <- Replay.materialize(remote.structure, newVersion)
-        yield DiffRender.render(oldReplay._1, newReplay._1)
+        yield CommandOutput(ResultKind.Diff, DiffRender.render(oldReplay._1, newReplay._1))
       case _ => Left(SnapError.DiffUsage)
 
   /** R31: a `diff` version operand that fails [[Version.parse]] renders uniformly as `invalid

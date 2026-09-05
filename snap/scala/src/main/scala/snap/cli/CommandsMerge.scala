@@ -20,12 +20,13 @@ import scala.annotation.tailrec
   * dedupe per dot — a cross-repository dot collision is corruption, §3.5/R38) and joins the
   * frontiers (componentwise max, R34); canonically replays the joined history, installs the result
   * ([[Materialize.install]], §10 mutation order), atomically replaces `repository.json` strictly
-  * afterwards (R105–R106); creates no patch and increments no revision; prints the NEW warnings to
-  * stderr (R75) and the joined version to stdout. Merging equal or already-contained history
-  * succeeds, changes nothing, emits no warnings, and prints the unchanged version — the general
-  * path realizes this with no special case: the union collapses to the local patch set, the join to
-  * the local frontier, the install to a no-op, and the metadata write to byte-identical canonical
-  * bytes (D7).
+  * afterwards (R105–R106); creates no patch and increments no revision; returns the NEW warnings
+  * (R75) alongside the joined version as one [[CommandOutput]] — [[Cli.emit]] is what actually
+  * prints them, in order, to whichever presentation was selected for stderr (T22), never this
+  * handler directly. Merging equal or already-contained history succeeds, changes nothing, emits no
+  * warnings, and prints the unchanged version — the general path realizes this with no special
+  * case: the union collapses to the local patch set, the join to the local frontier, the install to
+  * a no-op, and the metadata write to byte-identical canonical bytes (D7).
   *
   * This task is composition, not new merge semantics: the §6 engine ([[snap.core.Replay]], T16) and
   * the filesystem materializer (T12) are consumed as they are. In particular the two replays R75's
@@ -78,10 +79,13 @@ object CommandsMerge:
       ) // metadata strictly after (R106)
     yield
       // R75: only pairs present in the joined replay but absent from the pre-merge local replay,
-      // one line per pair, in Warning order (the sorted set difference keeps the ordering).
-      val newWarnings = mergedValid.warnings -- local.warnings
-      newWarnings.foreach(w => Presentation.Plain.warning(env, Messages.autoResolved(w)))
-      merged.frontier.canonicalText + "\n"
+      // one line per pair, in Warning order (the sorted set difference keeps the ordering). Returned
+      // as data, not printed here (T22): `Cli.emit` is the only place any command's output actually
+      // reaches a stream, which is what lets it select the correctly-presented `Presentation` for
+      // stderr without this handler needing to know anything about presentation at all.
+      val warnings =
+        (mergedValid.warnings -- local.warnings).iterator.map(Messages.autoResolved).toVector
+      CommandOutput(ResultKind.Success("Merged"), merged.frontier.canonicalText + "\n", warnings)
     outcome
 
   /** Exactly one operand — the other repository (T13 owns the exhaustive grammar matrix; this

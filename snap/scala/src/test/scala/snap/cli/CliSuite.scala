@@ -93,7 +93,7 @@ class CliSuite extends munit.FunSuite:
     val commands = Cli.defaultCommands.updated(
       Command.Status,
       (_: Env, repoRoot: Option[Path], _: List[String]) =>
-        Right(repoRoot.map(_.toString).getOrElse("NONE") + "\n")
+        Right(CommandOutput(ResultKind.Raw, repoRoot.map(_.toString).getOrElse("NONE") + "\n"))
     )
     val exit = Cli.run(fx.env, List("status"), commands)
     assertEquals(exit, 0)

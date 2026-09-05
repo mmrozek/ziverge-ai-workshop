@@ -54,7 +54,7 @@ object CommandsCommit:
       // scanned working tree over the validated current tree), so the cost is one extra replay.
       _ <- Repo.validateFully(next)
       _ <- Store.writeRepository(Commands.repositoryFile(root), next)
-    yield result.canonicalText + "\n"
+    yield CommandOutput(ResultKind.Success("Committed"), result.canonicalText + "\n")
 
   /** Exactly one operand — the message, whatever its shape (messages may legitimately contain or
     * start with anything R48 allows; test 04 commits a message holding tab, LF, and backslash). T13

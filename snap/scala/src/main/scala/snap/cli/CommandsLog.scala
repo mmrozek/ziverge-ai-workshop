@@ -24,7 +24,7 @@ object CommandsLog:
       order <- Replay.integrationOrder(valid.structure, valid.repository.frontier)
     yield render(valid, order)
 
-  private def render(valid: Repo.Valid, order: Vector[Dot]): String =
+  private def render(valid: Repo.Valid, order: Vector[Dot]): CommandOutput =
     // Probed by key only — never iterated — so it feeds no ordering decision; the output order is
     // the reversed integration order alone.
     val byDot: Map[Dot, (Patch, Version)] =
@@ -32,14 +32,18 @@ object CommandsLog:
         val patch = valid.repository.patches(i)
         patch.dot -> (patch, valid.results(i))
       }.toMap
-    order.reverseIterator
-      // Total: every ordered dot names a selected patch of the repository (Replay invariant);
-      // `get` keeps the impossible miss branch silent-safe without a throwing `apply`.
+    // Total: every ordered dot names a selected patch of the repository (Replay invariant); `get`
+    // keeps the impossible miss branch silent-safe without a throwing `apply`. One pass builds the
+    // rows both the plain text and T22's [[ResultKind.LogEntries]] payload are derived from, so the
+    // two can never drift apart.
+    val rows: Vector[LogLine] = order.reverseIterator
       .flatMap(byDot.get)
       .map { (patch, result) =>
-        s"${result.canonicalText}\t${patch.author.value}\t${escape(patch.message)}\n"
+        LogLine(result.canonicalText, patch.author.value, escape(patch.message))
       }
-      .mkString
+      .toVector
+    val text = rows.iterator.map(row => s"${row.version}\t${row.author}\t${row.message}\n").mkString
+    CommandOutput(ResultKind.LogEntries(rows), text)
 
   /** R84's escape rule, in the normative order (gotcha 8): backslash FIRST — so the backslashes
     * introduced for tab and LF are never themselves re-escaped — then tab, then LF.
